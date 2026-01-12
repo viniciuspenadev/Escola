@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 // Types
 interface Category {
@@ -29,6 +30,7 @@ interface Transaction {
 
 export const AccountsPayableView: FC = () => {
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<Transaction[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -150,7 +152,14 @@ export const AccountsPayableView: FC = () => {
     };
 
     const handleMarkAsPaid = async (expense: Transaction) => {
-        if (!confirm(`Confirmar pagamento de ${expense.description}?`)) return;
+        const isConfirmed = await confirm({
+            title: 'Confirmar Pagamento',
+            message: `Confirmar pagamento de ${expense.description}?`,
+            type: 'success',
+            confirmText: 'Confirmar Pagamento'
+        });
+
+        if (!isConfirmed) return;
 
         const { error } = await supabase
             .from('financial_transactions')
@@ -168,7 +177,14 @@ export const AccountsPayableView: FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir esta despesa?')) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Despesa',
+            message: 'Tem certeza que deseja excluir esta despesa?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (!isConfirmed) return;
 
         const { error } = await supabase
             .from('financial_transactions')

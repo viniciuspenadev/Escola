@@ -212,6 +212,36 @@ export const CompleteEnrollmentView: FC = () => {
     };
 
     // Unified Save Function
+    const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = e.target.value.replace(/\D/g, '');
+        if (value.length > 8) value = value.substring(0, 8);
+
+        // Format ####-###
+        const formatted = value.replace(/^(\d{5})(\d)/, '$1-$2');
+
+        setFormData((prev: any) => ({ ...prev, zip_code: formatted }));
+
+        if (value.length === 8) {
+            try {
+                const res = await fetch(`https://viacep.com.br/ws/${value}/json/`);
+                const data = await res.json();
+
+                if (!data.erro) {
+                    setFormData((prev: any) => ({
+                        ...prev,
+                        address: data.logradouro,
+                        neighbor: data.bairro,
+                        city: data.localidade,
+                        state: data.uf
+                    }));
+                }
+            } catch (err) {
+                console.error('Error fetching CEP:', err);
+            }
+        }
+    };
+
+    // Unified Save Function
     const handleSave = async (finalize = false) => {
         setLoading(true);
         try {
@@ -506,7 +536,7 @@ export const CompleteEnrollmentView: FC = () => {
                                 <div className="space-y-4 mt-6">
                                     <h4 className="font-medium text-gray-700">Endereço Residencial</h4>
                                     <div className="grid grid-cols-3 gap-4">
-                                        <Input className="col-span-1" label="CEP" value={formData.zip_code} onChange={e => setFormData({ ...formData, zip_code: e.target.value })} />
+                                        <Input className="col-span-1" label="CEP" value={formData.zip_code} onChange={handleCepChange} maxLength={9} placeholder="00000-000" />
                                         <Input className="col-span-2" label="Logradouro" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                                     </div>
                                     <div className="grid grid-cols-3 gap-4">

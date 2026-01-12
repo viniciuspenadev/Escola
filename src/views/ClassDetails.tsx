@@ -1,8 +1,9 @@
 import { type FC, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { Button, Card, Input } from '../components/ui';
+import { Button, Card, Input, Modal } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { ClassAttendance } from '../components/ClassAttendance';
 import { ClassDailyAgenda } from '../components/ClassDailyAgenda';
 import { ClassGrades } from '../components/ClassGrades';
@@ -26,9 +27,10 @@ import {
     Calendar,
     FileText,
     Layout,
-    X,
     Check,
-    Plus
+    Plus,
+    Edit,
+    X
 } from 'lucide-react';
 import type { Class, ClassEnrollment } from '../types';
 
@@ -36,6 +38,7 @@ export const ClassDetailsView: FC = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
 
     const [loading, setLoading] = useState(true);
     const [classData, setClassData] = useState<Class | null>(null);
@@ -64,6 +67,46 @@ export const ClassDetailsView: FC = () => {
     const [isAddTeacherOpen, setIsAddTeacherOpen] = useState(false);
     const [teacherSearch, setTeacherSearch] = useState('');
     const [availableTeachers, setAvailableTeachers] = useState<any[]>([]);
+
+    // Edit Class Modal
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editForm, setEditForm] = useState<Partial<Class>>({});
+    const [timelines, setTimelines] = useState<any[]>([]); // simplified type
+
+    useEffect(() => {
+        if (isEditModalOpen) {
+            fetchTimelines();
+            setEditForm({
+                name: classData?.name,
+                school_year: classData?.school_year,
+                shift: classData?.shift,
+                capacity: classData?.capacity,
+                daily_timeline_id: classData?.daily_timeline_id
+            });
+        }
+    }, [isEditModalOpen, classData]);
+
+    const fetchTimelines = async () => {
+        const { data } = await supabase.from('daily_timelines').select('id, name');
+        if (data) setTimelines(data);
+    };
+
+    const handleUpdateClass = async () => {
+        try {
+            const { error } = await supabase
+                .from('classes')
+                .update(editForm)
+                .eq('id', id);
+
+            if (error) throw error;
+
+            addToast('success', 'Turma atualizada com sucesso!');
+            setIsEditModalOpen(false);
+            fetchClassDetails();
+        } catch (error: any) {
+            addToast('error', 'Erro ao atualizar: ' + error.message);
+        }
+    };
 
     // Date Picker Highlights
     const [lessonDates, setLessonDates] = useState<string[]>([]);
@@ -320,6 +363,17 @@ export const ClassDetailsView: FC = () => {
                             Voltar
                         </Button>
 
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="text-white hover:bg-white/20"
+                                onClick={() => setIsEditModalOpen(true)}
+                            >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Editar Detalhes
+                            </Button>
+                        </div>
+
                         <div className="flex items-center gap-3">
                             {/* Date Picker Wrapper */}
                             <div className="relative group">
@@ -340,7 +394,14 @@ export const ClassDetailsView: FC = () => {
                                 variant="ghost"
                                 className="bg-white/10 text-white hover:bg-red-500 hover:text-white border border-white/20"
                                 onClick={async () => {
-                                    if (confirm('Tem certeza que deseja excluir esta turma? Esta ação não pode ser desfeita.')) {
+                                    const isConfirmed = await confirm({
+                                        title: 'Excluir Turma',
+                                        message: 'Tem certeza que deseja excluir esta turma? Esta ação não pode ser desfeita.',
+                                        type: 'danger',
+                                        confirmText: 'Excluir Turma'
+                                    });
+
+                                    if (isConfirmed) {
                                         setLoading(true);
                                         try {
                                             const { error } = await supabase.from('classes').delete().eq('id', id);
@@ -651,6 +712,74 @@ export const ClassDetailsView: FC = () => {
                     </div>
                 )
             }
+
+            {/* Modal Edit Class */}
+            <Modal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                title="Editar Turma"
+            >
+                <div className="space-y-4">
+                    <div>
+                        <Input
+                            label="Nome da Turma"
+                            value={editForm.name || ''}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Input
+                                type="number"
+                                label="Ano Letivo"
+                                value={editForm.school_year || ''}
+                                onChange={(e) => setEditForm({ ...editForm, school_year: Number(e.target.value) })}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Turno</label>
+                            <select
+                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                value={editForm.shift || 'morning'}
+                                onChange={(e) => setEditForm({ ...editForm, shift: e.target.value as any })}
+                            >
+                                <option value="morning">Manhã</option>
+                                <option value="afternoon">Tarde</option>
+                                <option value="full">Integral</option>
+                                <option value="night">Noite</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <Input
+                            type="number"
+                            label="Capacidade"
+                            value={editForm.capacity || ''}
+                            onChange={(e) => setEditForm({ ...editForm, capacity: Number(e.target.value) })}
+                        />
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Rotina Padrão (Timeline)</label>
+                        <select
+                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                            value={editForm.daily_timeline_id || ''}
+                            onChange={(e) => setEditForm({ ...editForm, daily_timeline_id: e.target.value || undefined })} // Handle 'none'
+                        >
+                            <option value="">Nenhuma (Padrão)</option>
+                            {timelines.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Essa rotina será usada para todos os alunos, exceto se houver personalização.</p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 mt-6">
+                        <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleUpdateClass}>Salvar Alterações</Button>
+                    </div>
+                </div>
+            </Modal>
 
         </div >
     );

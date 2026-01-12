@@ -3,6 +3,7 @@ import { planningService } from '../../services/planningService';
 import type { Subject } from '../../types';
 import { Button, Input } from '../../components/ui';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import {
     Plus,
     Search,
@@ -25,6 +26,7 @@ const COLORS = [
 
 export const SubjectCatalog = () => {
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -93,7 +95,14 @@ export const SubjectCatalog = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir esta matéria?')) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Matéria',
+            message: 'Tem certeza que deseja excluir esta matéria?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (!isConfirmed) return;
         try {
             await planningService.deleteSubject(id);
             addToast('success', 'Matéria excluída');

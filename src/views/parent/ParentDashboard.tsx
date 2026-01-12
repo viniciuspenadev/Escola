@@ -1,7 +1,7 @@
 import { type FC, useEffect, useState } from 'react';
 import {
-    CreditCard, GraduationCap, Calendar, AlertCircle, CheckCircle2,
-    Utensils, Moon, Smile, Baby, Clock
+    CreditCard, AlertCircle, CheckCircle2,
+    Utensils, Moon, Smile, Baby, Clock, MoreHorizontal, MessageCircle
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,7 +11,11 @@ import { ptBR } from 'date-fns/locale';
 
 import { useNavigate } from 'react-router-dom';
 import { planningService } from '../../services/planningService';
-import { DayTimeline } from './DayTimeline';
+import { DailyTimelineComponent } from '../../components/parent/DailyTimeline';
+import { DailyTimelineVertical } from '../../components/parent/DailyTimelineVertical';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useUnreadCommunications } from '../../hooks/useUnreadCommunications';
 
 interface DashboardData {
     studentProfile: {
@@ -58,8 +62,10 @@ export const ParentDashboard: FC = () => {
     const { user } = useAuth();
     const { selectedStudent } = useStudent();
     const navigate = useNavigate();
+    const { value: timelineMode } = useAppSettings('daily_timeline_display_mode', 'card');
+    const { unreadCount } = useUnreadCommunications();
     const [loading, setLoading] = useState(true);
-    // const [currentBannerIndex, setCurrentBannerIndex] = useState(0); // Removed
+    const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
     const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
     const [data, setData] = useState<DashboardData & { smartBanners: any[] }>({
         studentProfile: { name: '' },
@@ -78,14 +84,16 @@ export const ParentDashboard: FC = () => {
         fetchDashboardData();
     }, [user, selectedStudent]);
 
-    // Carousel Auto-Rotation Removed (Mural is now scrollable)
-    // useEffect(() => {
-    //     if (data.smartBanners.length <= 1) return;
-    //     const interval = setInterval(() => {
-    //         setCurrentBannerIndex(prev => (prev + 1) % data.smartBanners.length);
-    //     }, 5000);
-    //     return () => clearInterval(interval);
-    // }, [data.smartBanners]);
+    // Carousel Auto-Rotation 
+    useEffect(() => {
+        const relevantBanners = data.smartBanners.filter(b => b.type === 'mural-highlight' || b.type === 'event-today');
+        if (relevantBanners.length <= 1) return;
+
+        const interval = setInterval(() => {
+            setCurrentBannerIndex(prev => (prev + 1) % relevantBanners.length);
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [data.smartBanners]);
 
     const fetchDashboardData = async () => {
         if (!selectedStudent) {
@@ -370,7 +378,12 @@ export const ParentDashboard: FC = () => {
     // const activeBanner = data.smartBanners.length > 0 ? data.smartBanners[currentBannerIndex] : null;
 
     return (
-        <div className="space-y-6 animate-fade-in pb-24">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-6 pb-24"
+        >
 
 
 
@@ -379,100 +392,144 @@ export const ParentDashboard: FC = () => {
 
             {/* 1. Finance / Critical Alerts (Top) 🚨 */}
             {/* 1. Finance / Critical Alerts (Top) 🚨 */}
-            {(() => {
-                const alert = data.smartBanners.find(b =>
-                    (b.type === 'finance-overdue' || b.type === 'finance-warning') &&
-                    !dismissedAlerts.includes(b.type + b.title)
-                );
+            <AnimatePresence mode="popLayout">
+                {(() => {
+                    const alert = data.smartBanners.find(b =>
+                        (b.type === 'finance-overdue' || b.type === 'finance-warning') &&
+                        !dismissedAlerts.includes(b.type + b.title)
+                    );
 
-                if (!alert) return null;
-                const isOverdue = alert.type === 'finance-overdue';
+                    if (!alert) return null;
+                    const isOverdue = alert.type === 'finance-overdue';
+
+                    return (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className={`
+                            bg-gradient-to-r rounded-xl p-4 shadow-lg text-white text-white flex items-center justify-between relative group mb-4 overflow-hidden
+                            ${isOverdue ? 'from-red-600 to-red-800' : 'from-brand-600 to-brand-800'}
+                        `}
+                        >
+                            {/* Dismiss Button */}
+                            <button
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setDismissedAlerts(prev => [...prev, alert.type + alert.title]);
+                                }}
+                                className="absolute -top-2 -right-2 p-1 rounded-full shadow-sm bg-white text-gray-400 hover:text-red-500 z-10 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                            </button>
+
+                            <div className="flex items-center gap-3">
+                                <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm">
+                                    <AlertCircle className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-sm text-white">
+                                        {alert.title}
+                                    </h4>
+                                    <p className="text-xs text-white/90">
+                                        {alert.message}
+                                    </p>
+                                </div>
+                            </div>
+                            {alert.actionLink && (
+                                <button
+                                    onClick={() => navigate(alert.actionLink!)}
+                                    className="bg-white text-brand-900 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-white/90 active:scale-95 transition-transform whitespace-nowrap ml-2"
+                                    style={{ color: isOverdue ? '#dc2626' : '#4f46e5' }}
+                                >
+                                    {alert.actionLabel || 'Resolver'}
+                                </button>
+                            )}
+                        </motion.div>
+                    );
+                })()}
+            </AnimatePresence>
+
+            {/* 2. Mural / Highlights Carousel (Moved Up) */}
+            {/* 2. Mural / Highlights Carousel (Hero Style) */}
+            {(() => {
+                const relevantBanners = data.smartBanners.filter(b => b.type === 'mural-highlight' || b.type === 'event-today');
+                if (relevantBanners.length === 0) return null;
+
+                const banner = relevantBanners[currentBannerIndex];
 
                 return (
-                    <div className={`
-                    bg-gradient-to-r rounded-xl p-4 shadow-lg text-white text-white animate-fade-in flex items-center justify-between relative group mb-4
-                    ${isOverdue ? 'from-red-600 to-red-800' : 'from-brand-600 to-brand-800'}
-                `}>
-                        {/* Dismiss Button */}
-                        <button
-                            onClick={(e) => {
-                                e.preventDefault();
-                                setDismissedAlerts(prev => [...prev, alert.type + alert.title]);
-                            }}
-                            className="absolute -top-2 -right-2 p-1 rounded-full shadow-sm bg-white text-gray-400 hover:text-red-500 z-10 transition-colors"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                        </button>
+                    <div className="mt-2 mb-2 px-4">
+                        <div className="relative h-[200px] w-full rounded-3xl overflow-hidden shadow-lg group">
+                            <AnimatePresence mode='wait'>
+                                <motion.div
+                                    key={currentBannerIndex}
+                                    initial={{ opacity: 0, scale: 1.05 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.5 }}
+                                    onClick={() => banner.actionLink && navigate(banner.actionLink)}
+                                    className="absolute inset-0 cursor-pointer"
+                                >
+                                    <img
+                                        src={banner.imageUrl || 'https://images.unsplash.com/photo-1544531586-fde5298cdd40?q=80&w=1000&auto=format&fit=crop'}
+                                        alt={banner.title}
+                                        className="w-full h-full object-cover"
+                                    />
+                                    {/* Gradient Overlay */}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-                        <div className="flex items-center gap-3">
-                            <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm">
-                                <AlertCircle className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                                <h4 className="font-bold text-sm text-white">
-                                    {alert.title}
-                                </h4>
-                                <p className="text-xs text-white/90">
-                                    {alert.message}
-                                </p>
-                            </div>
+                                    {/* Content */}
+                                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className={`
+                                                text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg backdrop-blur-xl border border-white/20 shadow-sm
+                                                ${banner.type === 'event-today' ? 'bg-purple-500/90 text-white' : 'bg-brand-500/90 text-white'}
+                                            `}>
+                                                {banner.type === 'event-today' ? 'HOJE' : 'DESTAQUE'}
+                                            </span>
+                                        </div>
+                                        <h4 className="text-xl font-bold text-white leading-tight mb-1 drop-shadow-md">{banner.title}</h4>
+                                        <p className="text-sm font-medium text-gray-200 line-clamp-1 opacity-90">{banner.message}</p>
+                                    </div>
+                                </motion.div>
+                            </AnimatePresence>
+
+                            {/* Dots Indicator */}
+                            {relevantBanners.length > 1 && (
+                                <div className="absolute bottom-3 right-4 flex gap-1.5 z-10">
+                                    {relevantBanners.map((_, idx) => (
+                                        <div
+                                            key={idx}
+                                            className={`
+                                                w-1.5 h-1.5 rounded-full transition-all duration-300 
+                                                ${idx === currentBannerIndex ? 'bg-white w-3' : 'bg-white/40'}
+                                            `}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        {alert.actionLink && (
-                            <button
-                                onClick={() => navigate(alert.actionLink!)}
-                                className="bg-white text-brand-900 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-white/90 active:scale-95 transition-transform whitespace-nowrap ml-2"
-                                style={{ color: isOverdue ? '#dc2626' : '#4f46e5' }}
-                            >
-                                {alert.actionLabel || 'Resolver'}
-                            </button>
-                        )}
                     </div>
                 );
             })()}
 
-            {/* 2. Mural / Highlights Carousel (Moved Up) */}
-            {
-                data.smartBanners.filter(b => b.type === 'mural-highlight' || b.type === 'event-today').length > 0 && (
-                    <div className="mt-2 mb-2">
-                        <div className="flex gap-4 overflow-x-auto pb-4 pr-4 snap-x snap-mandatory scrollbar-hide">
-                            {data.smartBanners
-                                .filter(b => b.type === 'mural-highlight' || b.type === 'event-today')
-                                .map((banner, idx) => (
-                                    <div
-                                        key={idx}
-                                        onClick={() => banner.actionLink && navigate(banner.actionLink)}
-                                        className="snap-center shrink-0 w-[85vw] max-w-[320px] h-[160px] rounded-2xl relative overflow-hidden bg-gray-900 shadow-md group cursor-pointer"
-                                    >
-                                        <img
-                                            src={banner.imageUrl || 'https://images.unsplash.com/photo-1544531586-fde5298cdd40?q=80&w=1000&auto=format&fit=crop'}
-                                            alt={banner.title}
-                                            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-80"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-
-                                        <div className="absolute bottom-0 left-0 right-0 p-4">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={`
-                                            text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded backdrop-blur-md
-                                            ${banner.type === 'event-today' ? 'bg-purple-500/80 text-white' : 'bg-brand-500/80 text-white'}
-                                        `}>
-                                                    {banner.type === 'event-today' ? 'ACONTECE HOJE' : 'DESTAQUE'}
-                                                </span>
-                                            </div>
-                                            <h4 className="text-lg font-bold text-white leading-tight mb-0.5 line-clamp-2">{banner.title}</h4>
-                                            <p className="text-xs text-gray-300 line-clamp-1">{banner.message}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
-                    </div>
-                )
-            }
 
             {/* 3. Daily Highlight or Timeline (Moved Down) */}
-            <div className="flex flex-col gap-4">
-                {/* Timeline Widget (Day in Progress) */}
-                <DayTimeline />
+            {/* 3. Daily Highlight or Timeline (Moved Down) */}
+            <div className="flex flex-col gap-2">
+                {/* Timeline Widget (Configurable) */}
+                {selectedStudent && (
+                    <>
+                        {(timelineMode === 'graph' || timelineMode === 'both') && (
+                            <DailyTimelineComponent enrollmentId={selectedStudent.enrollment_id} />
+                        )}
+                        {(timelineMode === 'card' || timelineMode === 'both') && (
+                            <DailyTimelineVertical enrollmentId={selectedStudent.enrollment_id} />
+                        )}
+                    </>
+                )}
 
                 {/* Diary Widget */}
                 <div className="animate-fade-in">
@@ -501,22 +558,53 @@ export const ParentDashboard: FC = () => {
                                         <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium">Atualizado</span>
                                     </div>
                                     <div className="grid grid-cols-4 gap-2 text-center">
-                                        <div className="bg-orange-50 p-2 rounded-xl">
-                                            <Utensils className="w-5 h-5 text-orange-500 mx-auto mb-1" />
-                                            <span className="text-xs font-medium text-gray-600">{data.dailyHighlights.food}</span>
-                                        </div>
-                                        <div className="bg-indigo-50 p-2 rounded-xl">
-                                            <Moon className="w-5 h-5 text-indigo-500 mx-auto mb-1" />
-                                            <span className="text-xs font-medium text-gray-600">{data.dailyHighlights.sleep}</span>
-                                        </div>
-                                        <div className="bg-yellow-50 p-2 rounded-xl">
-                                            <Smile className="w-5 h-5 text-yellow-500 mx-auto mb-1" />
-                                            <span className="text-xs font-medium text-gray-600">{data.dailyHighlights.mood}</span>
-                                        </div>
-                                        <div className="bg-blue-50 p-2 rounded-xl">
-                                            <CheckCircle2 className="w-5 h-5 text-blue-500 mx-auto mb-1" />
-                                            <span className="text-xs font-medium text-gray-600">{data.dailyHighlights.bathroom}</span>
-                                        </div>
+                                        {[
+                                            {
+                                                label: data.dailyHighlights.food,
+                                                icon: Utensils,
+                                                bgClass: 'bg-orange-50',
+                                                textClass: 'text-orange-500',
+                                                borderClass: 'hover:border-orange-200',
+                                                delay: 0
+                                            },
+                                            {
+                                                label: data.dailyHighlights.sleep,
+                                                icon: Moon,
+                                                bgClass: 'bg-indigo-50',
+                                                textClass: 'text-indigo-500',
+                                                borderClass: 'hover:border-indigo-200',
+                                                delay: 0.1
+                                            },
+                                            {
+                                                label: data.dailyHighlights.mood,
+                                                icon: Smile,
+                                                bgClass: 'bg-yellow-50',
+                                                textClass: 'text-yellow-500',
+                                                borderClass: 'hover:border-yellow-200',
+                                                delay: 0.2
+                                            },
+                                            {
+                                                label: data.dailyHighlights.bathroom,
+                                                icon: CheckCircle2,
+                                                bgClass: 'bg-blue-50',
+                                                textClass: 'text-blue-500',
+                                                borderClass: 'hover:border-blue-200',
+                                                delay: 0.3
+                                            },
+                                        ].map((item, idx) => (
+                                            <motion.div
+                                                key={idx}
+                                                initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                transition={{ delay: item.delay, type: 'spring', stiffness: 300, damping: 20 }}
+                                                whileTap={{ scale: 0.9, backgroundColor: 'rgba(0,0,0,0.05)' }}
+                                                whileHover={{ scale: 1.05 }}
+                                                className={`${item.bgClass} p-2 rounded-xl cursor-pointer hover:shadow-sm border border-transparent ${item.borderClass} transition-all duration-200`}
+                                            >
+                                                <item.icon className={`w-5 h-5 mx-auto mb-1 ${item.textClass}`} />
+                                                <span className="text-xs font-medium text-gray-600 block leading-tight">{item.label}</span>
+                                            </motion.div>
+                                        ))}
                                     </div>
                                 </div>
                             );
@@ -535,29 +623,34 @@ export const ParentDashboard: FC = () => {
             {/* 3.5 Aulas de Hoje (ou Próximo Dia Letivo) Widget - Compacto e Clean */}
 
 
-            {/* 4. Navigation Grid */}
             <div className="grid grid-cols-4 gap-3">
                 {[
-                    { label: 'Cronograma', icon: Clock, color: 'text-brand-600', bg: 'bg-brand-50', link: '/pais/cronograma' },
-                    { label: 'Boletim', icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50', link: '/pais/boletim' },
-                    { label: 'Financeiro', icon: CreditCard, color: 'text-green-600', bg: 'bg-green-50', link: '/pais/financeiro' },
-                    { label: 'Agenda', icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50', link: '/pais/agenda' },
-                    // { label: 'Carteirinha', icon: User, color: 'text-orange-600', bg: 'bg-orange-50', link: '/pais/perfil' },
+                    { label: 'Cronograma', icon: Clock, link: '/pais/cronograma' },
+                    { label: 'Mensagens', icon: MessageCircle, link: '/pais/comunicados', badge: unreadCount }, // Added badge prop
+                    { label: 'Financeiro', icon: CreditCard, link: '/pais/financeiro' },
+                    { label: 'Mais', icon: MoreHorizontal, link: '/pais/menu' },
                 ].map((item, idx) => (
-                    <button
+                    <motion.button
                         key={idx}
-                        onClick={() => navigate(item.link)}
-                        className="flex flex-col items-center gap-2 group"
+                        onClick={() => item.link && navigate(item.link)}
+                        whileTap={{ scale: 0.95 }}
+                        className="flex flex-col items-center gap-2 group relative" // relative for badge positioning
                     >
                         <div className={`
-                            w-16 h-16 rounded-2xl ${item.bg} ${item.color} 
+                            w-16 h-16 rounded-2xl bg-brand-50 text-brand-600
                             flex items-center justify-center shadow-sm border border-black/5
-                            group-active:scale-95 transition-transform
+                            transition-transform relative
                         `}>
                             <item.icon className="w-7 h-7" />
+                            {/* Badge Logic */}
+                            {!!item.badge && item.badge > 0 && (
+                                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-sm">
+                                    {item.badge}
+                                </span>
+                            )}
                         </div>
                         <span className="text-xs font-medium text-gray-600 group-hover:text-gray-900 transition-colors">{item.label}</span>
-                    </button>
+                    </motion.button>
                 ))}
             </div>
 
@@ -573,91 +666,84 @@ export const ParentDashboard: FC = () => {
                 </div>
 
                 <div className="space-y-3">
-                    {data.feed.map(item => (
-                        <div key={item.id} className={`
-                            relative bg-white p-4 rounded-xl border shadow-sm transition-all hover:shadow-md
-                            ${item.is_pinned ? 'border-brand-200 bg-brand-50/30' : 'border-gray-100'}
+                    {data.feed.map((item, index) => (
+                        <motion.div
+                            key={item.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.05 }}
+                            whileTap={{ scale: 0.98 }}
+                            className={`
+                            relative bg-white p-3 rounded-xl border shadow-sm
+                            ${item.is_pinned ? 'bg-brand-50/30 border-brand-100' : 'border-gray-100'}
                         `}>
                             {item.is_pinned && (
-                                <div className="absolute -top-2 -right-2 bg-brand-500 text-white p-1 rounded-full shadow-sm">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+                                <div className="absolute -top-1 -right-1 bg-brand-500 text-white p-0.5 rounded-full shadow-sm z-10">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 3H16.1L18.1 5L18 5L16 3ZM5 21V19H7.09L15.09 11H12.5V8.41L5 15.91V21H5Z" /></svg>
                                 </div>
                             )}
 
-                            <div className="flex items-start gap-4">
-                                {/* Icon Box */}
+                            <div className="flex items-start gap-3">
+                                {/* Date Box (Compact with Color) */}
                                 <div className={`
-                                    w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border relative
+                                    w-10 h-10 rounded-lg flex flex-col items-center justify-center shrink-0 border mt-0.5
                                     ${item.type === 'notice' ? 'bg-amber-50 border-amber-100 text-amber-600' :
                                         item.type === 'alert' ? 'bg-red-50 border-red-100 text-red-600' :
-                                            'bg-indigo-50 border-indigo-100 text-indigo-600'}
+                                            'bg-brand-50 border-brand-100 text-brand-600'}
                                 `}>
-                                    {item.type === 'notice' || item.type === 'alert' ? (
-                                        <div className="text-center">
-                                            <span className="block text-[10px] uppercase font-bold leading-none translate-y-[-2px]">{format(item.date, 'MMM', { locale: ptBR })}</span>
-                                            <span className="block text-lg font-bold leading-none">{format(item.date, 'dd')}</span>
-                                            <div className="mt-0.5 flex justify-center">
-                                                <AlertCircle className="w-3 h-3 opacity-50" />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="text-center">
-                                            <span className="block text-[10px] uppercase font-bold leading-none">{format(item.date, 'MMM', { locale: ptBR })}</span>
-                                            <span className="block text-lg font-bold leading-none mt-0.5">{format(item.date, 'dd')}</span>
-                                        </div>
-                                    )}
+                                    <span className="text-[9px] uppercase font-bold leading-none mb-0.5">{format(item.date, 'MMM', { locale: ptBR })}</span>
+                                    <span className="text-sm font-bold leading-none">{format(item.date, 'dd')}</span>
                                 </div>
 
+                                {/* Content */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex flex-col gap-0.5">
-                                            <div className="flex items-center gap-2">
-                                                {item.isClassSpecific && (
-                                                    <span className="text-[10px] font-bold text-brand-700 bg-brand-100 px-1.5 py-0.5 rounded uppercase tracking-wide border border-brand-200">
-                                                        Exclusivo da Turma
-                                                    </span>
-                                                )}
-                                                {item.today && (
-                                                    <span className="text-[10px] font-bold text-white bg-green-500 px-1.5 py-0.5 rounded uppercase tracking-wide">
-                                                        Hoje
-                                                    </span>
-                                                )}
-                                                {item.type === 'alert' && (
-                                                    <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded uppercase tracking-wide">
-                                                        Urgente
-                                                    </span>
-                                                )}
-                                                {item.type === 'event' && (item as any).eventType && (
-                                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wide">
-                                                        {((item as any).eventType === 'academic' ? 'Acadêmico' :
-                                                            (item as any).eventType === 'holiday' ? 'Feriado' :
-                                                                (item as any).eventType === 'meeting' ? 'Reunião' : 'Geral')}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <h4 className={`text-sm font-bold leading-tight ${item.is_pinned ? 'text-brand-900' : 'text-gray-900'}`}>
-                                                {item.title}
-                                            </h4>
-                                        </div>
+                                    {/* Badges Row */}
+                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                        {item.isClassSpecific && (
+                                            <span className="text-[8px] font-bold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-100 uppercase tracking-wide">
+                                                Turma
+                                            </span>
+                                        )}
+                                        {item.today && (
+                                            <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 uppercase tracking-wide">
+                                                Hoje
+                                            </span>
+                                        )}
+                                        {item.type === 'alert' && (
+                                            <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 uppercase tracking-wide">
+                                                Importante
+                                            </span>
+                                        )}
+                                        {item.type === 'event' && (item as any).eventType && (
+                                            <span className="text-[8px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-wide">
+                                                {(item as any).eventType === 'academic' ? 'Acadêmico' :
+                                                    (item as any).eventType === 'holiday' ? 'Feriado' :
+                                                        (item as any).eventType === 'meeting' ? 'Reunião' : 'Geral'}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                        <span className="text-[10px] text-gray-500 whitespace-nowrap ml-2 bg-white px-2 py-0.5 rounded-full border border-gray-100">
-                                            {item.type === 'event' ? format(item.date, 'HH:mm') : format(item.date, 'd MMM', { locale: ptBR })}
+                                    <div className="flex justify-between items-start mb-0.5">
+                                        <h4 className={`text-xs font-bold leading-snug truncate ${item.is_pinned ? 'text-brand-900' : 'text-gray-900'}`}>
+                                            {item.title}
+                                        </h4>
+                                        <span className="text-[9px] text-gray-400 whitespace-nowrap ml-2">
+                                            {item.type === 'event' ? format(item.date, 'HH:mm') : ''}
                                         </span>
                                     </div>
 
-                                    <p className="text-sm text-gray-600 line-clamp-2 mt-1 leading-relaxed">
+                                    <p className="text-[11px] text-gray-500 line-clamp-1 leading-snug">
                                         {item.description}
                                     </p>
-
                                     {item.location && (
-                                        <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                                        <div className="mt-1 flex items-center gap-1 text-[9px] text-gray-400">
+                                            <div className="w-1 h-1 rounded-full bg-gray-300" />
                                             {item.location}
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     ))}
 
                     {data.feed.length === 0 && (
@@ -670,10 +756,7 @@ export const ParentDashboard: FC = () => {
                         </div>
                     )}
                 </div>
-
-
-
             </div>
-        </div >
+        </motion.div >
     );
 };

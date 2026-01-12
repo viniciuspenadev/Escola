@@ -1,6 +1,8 @@
 import { type FC, useEffect, useState } from 'react';
 import { Users, Search, Mail, Eye, MoreVertical, Loader2, RefreshCw, Plus, X, Save } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface User {
     id: string;
@@ -26,6 +28,9 @@ export const UserManagement: FC = () => {
     const [showResetModal, setShowResetModal] = useState(false);
     const [resetting, setResetting] = useState(false);
     const [actionMenuUser, setActionMenuUser] = useState<string | null>(null);
+
+    const { confirm } = useConfirm();
+    const { addToast } = useToast();
 
     // Create User State
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -110,6 +115,15 @@ export const UserManagement: FC = () => {
     const handleResetPassword = async () => {
         if (!selectedUser) return;
 
+        const isConfirmed = await confirm({
+            title: 'Resetar Senha',
+            message: `Tem certeza que deseja enviar um email de redefinição de senha para ${selectedUser.email}?`,
+            type: 'warning',
+            confirmText: 'Sim, Enviar Email'
+        });
+
+        if (!isConfirmed) return;
+
         try {
             setResetting(true);
 
@@ -119,12 +133,12 @@ export const UserManagement: FC = () => {
 
             if (error) throw error;
 
-            alert('Email de redefinição enviado com sucesso!');
+            addToast('success', 'Email de redefinição enviado com sucesso!');
             setShowResetModal(false);
             setSelectedUser(null);
         } catch (error) {
             console.error('Error resetting password:', error);
-            alert('Erro ao enviar email de redefinição.');
+            addToast('error', 'Erro ao enviar email de redefinição.');
         } finally {
             setResetting(false);
         }
@@ -154,9 +168,18 @@ export const UserManagement: FC = () => {
 
     const handleCreateUser = async () => {
         if (!newUser.name || !newUser.email || !newUser.password) {
-            alert('Preencha todos os campos obrigatórios');
+            addToast('error', 'Preencha todos os campos obrigatórios');
             return;
         }
+
+        const isConfirmed = await confirm({
+            title: 'Criar Novo Usuário',
+            message: `Confirma a criação do usuário ${newUser.name} como ${newUser.role}?`,
+            type: 'info',
+            confirmText: 'Criar Usuário'
+        });
+
+        if (!isConfirmed) return;
 
         setCreatingUser(true);
         try {
@@ -169,30 +192,30 @@ export const UserManagement: FC = () => {
 
             if (error) throw error;
 
-            alert('Usuário criado com sucesso!');
+            addToast('success', 'Usuário criado com sucesso!');
             setShowCreateModal(false);
             setNewUser({ name: '', email: '', password: '', role: 'TEACHER' });
             fetchUsers();
         } catch (error: any) {
             console.error('Error creating user:', error);
-            alert('Erro ao criar usuário: ' + (error.message || 'Erro desconhecido'));
+            addToast('error', 'Erro ao criar usuário: ' + (error.message || 'Erro desconhecido'));
         } finally {
             setCreatingUser(false);
         }
     };
 
     return (
-        <div className="p-6">
+        <div className="space-y-6 animate-fade-in pb-20">
             {/* Header */}
-            <div className="mb-6">
+            <div>
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-brand-100 rounded-xl flex items-center justify-center">
                             <Users className="w-6 h-6 text-brand-600" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Gerenciar Usuários</h1>
-                            <p className="text-sm text-gray-500">
+                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Gerenciar Usuários</h1>
+                            <p className="text-gray-500">
                                 {filteredUsers.length} {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
                             </p>
                         </div>

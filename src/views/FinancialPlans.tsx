@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 export const FinancialPlansView: FC = () => {
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const { availableYears, currentYear } = useSystem();
     const [plans, setPlans] = useState<any[]>([]);
     // const [loading, setLoading] = useState(true); // removed unused loading
@@ -98,7 +100,14 @@ export const FinancialPlansView: FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir este plano?')) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Plano',
+            message: 'Tem certeza que deseja excluir este plano financeiro?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (!isConfirmed) return;
         try {
             const { error } = await supabase.from('financial_plans').delete().eq('id', id);
             if (error) throw error;

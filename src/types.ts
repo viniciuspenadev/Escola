@@ -32,6 +32,7 @@ export interface Class {
     capacity: number;
     status: 'active' | 'archived';
     created_at?: string;
+    daily_timeline_id?: string;
     _count?: {
         enrollments: number;
     };
@@ -115,4 +116,53 @@ export interface Event {
     show_on_mural?: boolean;
     created_at?: string;
     created_by?: string;
+}
+
+export interface CommunicationChannel {
+    id: string;
+    name: string;
+    icon_name: string;
+    color: string;
+    is_system_default: boolean;
+}
+
+export interface Communication {
+    id: string;
+    channel_id: string;
+    channel?: CommunicationChannel;
+    sender_profile_id?: string;
+    title: string;
+    preview_text?: string;
+    content: string;
+    priority: number; // 1=Normal, 2=High
+    allow_reply: boolean;
+    attachments: string[]; // JSONB URLs
+    metadata: Record<string, any>;
+    created_at: string;
+    sender_profile?: {
+        name: string;
+    };
+}
+
+export interface CommunicationRecipient {
+    id: string;
+    communication_id: string;
+    student_id: string;
+    guardian_id: string;
+    read_at?: string;
+    is_archived: boolean;
+    response?: {
+        selected_option: string;
+        answered_at: string;
+    };
+    communication?: Communication;
+}
+
+export interface CommunicationReply {
+    id: string;
+    communication_id: string;
+    guardian_id: string;
+    content: string;
+    created_at: string;
+    guardian?: User; // Joined profile
 }

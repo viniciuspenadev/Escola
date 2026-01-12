@@ -47,7 +47,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             id: session.user.id,
             email: session.user.email!,
             name: profile?.name || session.user.user_metadata?.name || 'Usuário',
-            role: (profile?.role as any) || 'PARENT'
+            role: (profile?.role ? profile.role.trim().toUpperCase() : 'PARENT') as any
         });
     };
 

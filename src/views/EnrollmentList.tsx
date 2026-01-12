@@ -25,15 +25,18 @@ const StatusBadge = ({ status }: { status: string }) => {
     );
 };
 
+import { useSystem } from '../contexts/SystemContext';
+
 export const EnrollmentListView: FC = () => {
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { years, currentYear: activeSystemYear } = useSystem();
     const [enrollments, setEnrollments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Filter Context
     const currentYear = new Date().getFullYear();
-    const defaultYear = new Date().getMonth() > 8 ? currentYear + 1 : currentYear;
+    const defaultYear = activeSystemYear ? parseInt(activeSystemYear.year) : (new Date().getMonth() > 8 ? currentYear + 1 : currentYear);
     const [selectedYear, setSelectedYear] = useState<number>(defaultYear);
     const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -152,28 +155,34 @@ export const EnrollmentListView: FC = () => {
 
             {/* Context Tabs (Year Selection) */}
             <div className="border-b border-gray-100">
-                <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                    {[2025, 2026].map((year) => (
-                        <button
-                            key={year}
-                            onClick={() => setSelectedYear(year)}
-                            className={`
+                <nav className="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
+                    {years.map((yearObj) => {
+                        const yearInt = parseInt(yearObj.year);
+                        return (
+                            <button
+                                key={yearObj.id}
+                                onClick={() => setSelectedYear(yearInt)}
+                                className={`
                                 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-all
-                                ${selectedYear === year
-                                    ? 'border-brand-600 text-brand-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
-                                }
+                                ${selectedYear === yearInt
+                                        ? 'border-brand-600 text-brand-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
+                                    }
                             `}
-                        >
-                            <Calendar className="w-4 h-4" />
-                            Ano Letivo {year}
-                            {selectedYear === year && (
-                                <span className="bg-brand-50 text-brand-600 py-0.5 px-2 rounded-md text-[10px] font-bold ml-1.5 border border-brand-100">
-                                    {loading ? '...' : stats.total}
-                                </span>
-                            )}
-                        </button>
-                    ))}
+                            >
+                                <Calendar className="w-4 h-4" />
+                                Ano Letivo {yearObj.year}
+                                {selectedYear === yearInt && (
+                                    <span className="bg-brand-50 text-brand-600 py-0.5 px-2 rounded-md text-[10px] font-bold ml-1.5 border border-brand-100">
+                                        {loading ? '...' : stats.total}
+                                    </span>
+                                )}
+                                {yearObj.status === 'active' && (
+                                    <span className="w-2 h-2 rounded-full bg-green-500 ml-1" title="Ano Ativo" />
+                                )}
+                            </button>
+                        )
+                    })}
                 </nav>
             </div>
 

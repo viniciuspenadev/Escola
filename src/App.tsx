@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { StudentProvider } from './contexts/StudentContext';
 import { SystemProvider } from './contexts/SystemContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { ConfirmProvider } from './contexts/ConfirmContext';
 import { Loader2 } from 'lucide-react';
 import type { User } from './types';
 
@@ -26,13 +27,15 @@ function AppContent() {
 
   return (
     <ToastProvider>
-      <SystemProvider>
-        <StudentProvider>
-          <NotificationProvider>
-            <AppRouter user={user} onLogin={handleLogin} onLogout={signOut} />
-          </NotificationProvider>
-        </StudentProvider>
-      </SystemProvider>
+      <ConfirmProvider>
+        <SystemProvider>
+          <StudentProvider>
+            <NotificationProvider>
+              <AppRouter user={user} onLogin={handleLogin} onLogout={signOut} />
+            </NotificationProvider>
+          </StudentProvider>
+        </SystemProvider>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

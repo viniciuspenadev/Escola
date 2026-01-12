@@ -1,6 +1,7 @@
 import { type FC, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -12,13 +13,18 @@ import {
     Share2,
     Percent,
     TrendingDown,
-    TrendingUp
+    TrendingUp,
+    CreditCard,
+    ExternalLink,
+    Loader2
 } from 'lucide-react';
+import type { GatewayConfig } from './admin/FinancialSettingsTab';
 
 export const ChargeDetailsView: FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
 
     const [loading, setLoading] = useState(true);
     const [charge, setCharge] = useState<any>(null);
@@ -52,9 +58,35 @@ export const ChargeDetailsView: FC = () => {
         value: ''
     });
 
+    // Gateway State
+    const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | null>(null);
+    const [generatingPayment, setGeneratingPayment] = useState(false);
+
     useEffect(() => {
         fetchChargeDetails();
+        fetchGatewayConfig();
     }, [id]);
+
+    const fetchGatewayConfig = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'finance_gateway_config')
+                .maybeSingle();
+
+            if (error) throw error;
+            if (data) {
+                let val = data.value;
+                if (typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch (e) { console.error('Error parsing gateway config JSON', e); }
+                }
+                setGatewayConfig(val as GatewayConfig);
+            }
+        } catch (err) {
+            console.error('Error fetching gateway config:', err);
+        }
+    };
 
     const fetchChargeDetails = async () => {
         try {
@@ -88,13 +120,48 @@ export const ChargeDetailsView: FC = () => {
         }
     };
 
+    const handleGeneratePayment = async () => {
+        if (!gatewayConfig || gatewayConfig.provider !== 'asaas') {
+            addToast('error', 'Gateway Asaas não configurado.');
+            return;
+        }
+
+        const isConfirmed = await confirm({
+            title: 'Gerar Cobrança (Asaas)',
+            message: 'Deseja gerar Pix e Boleto automaticamente para esta mensalidade? O valor será registrado no Asaas.',
+            confirmText: 'Gerar Agora'
+        });
+        if (!isConfirmed) return;
+
+        setGeneratingPayment(true);
+        try {
+            const { error } = await supabase.functions.invoke('send-payment-link', {
+                body: { installment_ids: [id] }
+            });
+
+            if (error) throw error;
+            addToast('success', 'Cobrança gerada com sucesso via Asaas!');
+            fetchChargeDetails(); // Refresh to see new billing_url
+        } catch (err: any) {
+            console.error(err);
+            addToast('error', 'Erro ao gerar cobrança: ' + err.message);
+        } finally {
+            setGeneratingPayment(false);
+        }
+    };
+
     const handleSaveConfig = async (shouldPublish: boolean = false) => {
         try {
             // Smart validation
-            if (shouldPublish && !metadata.pix_key && !metadata.boleto_code && !metadata.boleto_url) {
-                if (!confirm('Atenção: Você está liberando a cobrança sem nenhum método de pagamento (Pix/Boleto) configurado. O responsável verá a cobrança mas não conseguirá pagar. Deseja continuar?')) {
-                    return;
-                }
+            if (shouldPublish && !metadata.pix_key && !metadata.boleto_code && !metadata.boleto_url && !charge.billing_url) {
+                const isConfirmed = await confirm({
+                    title: 'Método de Pagamento Ausente',
+                    message: 'Você está liberando a cobrança sem nenhum método de pagamento (Pix/Boleto, Link) configurado. O responsável verá a cobrança mas não conseguirá pagar. Deseja continuar?',
+                    type: 'warning',
+                    confirmText: 'Liberar Mesmo Assim'
+                });
+
+                if (!isConfirmed) return;
             }
 
             const updates: any = {
@@ -140,7 +207,14 @@ export const ChargeDetailsView: FC = () => {
     };
 
     const handleMarkAsPaid = async () => {
-        if (!confirm('Confirmar recebimento deste valor?')) return;
+        const isConfirmed = await confirm({
+            title: 'Confirmar Recebimento',
+            message: 'Confirmar recebimento deste valor?',
+            type: 'success',
+            confirmText: 'Confirmar Recebimento'
+        });
+
+        if (!isConfirmed) return;
 
         try {
             const { error } = await supabase
@@ -167,7 +241,14 @@ export const ChargeDetailsView: FC = () => {
 
     const handleNegotiationSave = async () => {
         try {
-            if (!confirm('Confirmar negociação? O valor da cobrança será alterado.')) return;
+            const isConfirmed = await confirm({
+                title: 'Confirmar Negociação',
+                message: 'O valor da cobrança será alterado. Confirmar negociação?',
+                type: 'warning',
+                confirmText: 'Confirmar'
+            });
+
+            if (!isConfirmed) return;
 
             const originalValue = charge.original_value || charge.value;
             let finalValue = Number(originalValue);
@@ -192,20 +273,40 @@ export const ChargeDetailsView: FC = () => {
                 finalValue = originalValue + surchargeValue;
             }
 
-            const { error } = await supabase
-                .from('installments')
-                .update({
-                    value: finalValue,
-                    original_value: originalValue,
-                    discount_value: discountValue,
-                    surcharge_value: surchargeValue,
-                    negotiation_type: negotiationData.type,
-                    negotiation_notes: negotiationData.notes,
-                    negotiation_date: new Date().toISOString()
-                })
-                .eq('id', id);
+            if (gatewayConfig?.provider === 'asaas' && charge.gateway_integration_id) {
+                // Call Edge Function for Asaas Update
+                const { error: fnError } = await supabase.functions.invoke('manage-payment', {
+                    body: {
+                        action: 'update_value',
+                        installment_id: id,
+                        payload: {
+                            newValue: finalValue,
+                            discount_value: discountValue,
+                            surcharge_value: surchargeValue,
+                            negotiation_notes: negotiationData.notes,
+                            negotiation_type: negotiationData.type,
+                        }
+                    }
+                });
+                if (fnError) throw fnError;
+            } else {
+                // Local Only Update
+                const { error } = await supabase
+                    .from('installments')
+                    .update({
+                        value: finalValue,
+                        original_value: originalValue,
+                        discount_value: discountValue,
+                        surcharge_value: surchargeValue,
+                        negotiation_type: negotiationData.type,
+                        negotiation_notes: negotiationData.notes,
+                        negotiation_date: new Date().toISOString()
+                    })
+                    .eq('id', id);
 
-            if (error) throw error;
+                if (error) throw error;
+            }
+
             addToast('success', 'Negociação aplicada com sucesso!');
             setNegotiationModalOpen(false);
             fetchChargeDetails();
@@ -242,6 +343,39 @@ export const ChargeDetailsView: FC = () => {
         }
     };
 
+    const handleCancelCharge = async () => {
+        const isConfirmed = await confirm({
+            title: 'Cancelar Cobrança',
+            message: 'Tem certeza? Isso cancelará a cobrança no sistema' + (hasGateway ? ' e no Asaas.' : '.'),
+            type: 'danger',
+            confirmText: 'Sim, Cancelar'
+        });
+
+        if (!isConfirmed) return;
+
+        try {
+            if (gatewayConfig?.provider === 'asaas' && charge.gateway_integration_id) {
+                // Call Edge Function
+                const { error } = await supabase.functions.invoke('manage-payment', {
+                    body: { action: 'cancel', installment_id: id }
+                });
+                if (error) throw error;
+            } else {
+                // Local Cancel
+                const { error } = await supabase
+                    .from('installments')
+                    .update({ status: 'cancelled', is_published: false })
+                    .eq('id', id);
+                if (error) throw error;
+            }
+
+            addToast('success', 'Cobrança cancelada com sucesso.');
+            fetchChargeDetails();
+        } catch (error: any) {
+            addToast('error', 'Erro ao cancelar: ' + error.message);
+        }
+    };
+
     if (loading) return (
         <div className="flex items-center justify-center min-h-[400px]">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
@@ -253,6 +387,7 @@ export const ChargeDetailsView: FC = () => {
     const isPaid = charge.status === 'paid';
     const isOverdue = charge.status === 'pending' && new Date(charge.due_date) < new Date();
     const isPublished = charge.is_published;
+    const hasGateway = !!charge.billing_url;
 
     // Status Badge Logic
     const StatusBadge = () => {
@@ -393,43 +528,71 @@ export const ChargeDetailsView: FC = () => {
                                 </div>
                             )}
                         </div>
-                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-                                    Chave Pix
-                                </label>
-                                <Input
-                                    disabled={isPaid}
-                                    value={metadata.pix_key}
-                                    onChange={e => setMetadata({ ...metadata, pix_key: e.target.value })}
-                                    placeholder="CPF, Email ou Aleatória..."
-                                    className="bg-gray-50/50"
-                                />
-                                <p className="text-xs text-gray-400">Chave usada para gerar o QR Code do aluno.</p>
-                            </div>
 
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-                                    Boleto Bancário
-                                </label>
-                                <Input
-                                    disabled={isPaid}
-                                    value={metadata.boleto_code}
-                                    onChange={e => setMetadata({ ...metadata, boleto_code: e.target.value })}
-                                    placeholder="Linha digitável..."
-                                    className="bg-gray-50/50"
-                                />
-                                <Input
-                                    disabled={isPaid}
-                                    value={metadata.boleto_url}
-                                    onChange={e => setMetadata({ ...metadata, boleto_url: e.target.value })}
-                                    placeholder="URL do PDF..."
-                                    className="bg-gray-50/50"
-                                />
+                        {hasGateway ? (
+                            <div className="p-6 bg-brand-50/50">
+                                <div className="flex items-center gap-4 p-4 bg-white border border-brand-100 rounded-xl shadow-sm">
+                                    <div className="w-12 h-12 bg-brand-100 text-brand-600 rounded-lg flex items-center justify-center">
+                                        <CreditCard className="w-6 h-6" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-gray-900">Cobrança Gerada no Asaas</h4>
+                                        <p className="text-xs text-gray-500">Pix e Boleto estão ativos e vinculados.</p>
+                                    </div>
+                                    <a
+                                        href={charge.billing_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-4 py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 transition flex items-center gap-2"
+                                    >
+                                        <ExternalLink className="w-3 h-3" />
+                                        Ver Fatura
+                                    </a>
+                                </div>
+                                <div className="mt-4 flex gap-4 text-xs text-gray-500 justify-center">
+                                    <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Boleto Bancário</span>
+                                    <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Pix QR Code</span>
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                                <div className="space-y-3 opacity-100 transition-opacity">
+                                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+                                        Chave Pix (Manual)
+                                    </label>
+                                    <Input
+                                        disabled={isPaid}
+                                        value={metadata.pix_key}
+                                        onChange={e => setMetadata({ ...metadata, pix_key: e.target.value })}
+                                        placeholder="CPF, Email ou Aleatória..."
+                                        className="bg-gray-50/50"
+                                    />
+                                    <p className="text-xs text-gray-400">Chave usada para gerar o QR Code do aluno.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+                                        Boleto Bancário (Manual)
+                                    </label>
+                                    <Input
+                                        disabled={isPaid}
+                                        value={metadata.boleto_code}
+                                        onChange={e => setMetadata({ ...metadata, boleto_code: e.target.value })}
+                                        placeholder="Linha digitável..."
+                                        className="bg-gray-50/50"
+                                    />
+                                    <Input
+                                        disabled={isPaid}
+                                        value={metadata.boleto_url}
+                                        onChange={e => setMetadata({ ...metadata, boleto_url: e.target.value })}
+                                        placeholder="URL do PDF..."
+                                        className="bg-gray-50/50"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </Card>
                 </div>
 
@@ -441,6 +604,17 @@ export const ChargeDetailsView: FC = () => {
                         <div className="space-y-3">
                             {!isPaid ? (
                                 <>
+                                    {gatewayConfig?.provider === 'asaas' && !hasGateway && (
+                                        <Button
+                                            onClick={handleGeneratePayment}
+                                            disabled={generatingPayment}
+                                            className="w-full bg-brand-600 hover:bg-brand-700 text-white shadow-brand-200 shadow-md transition-all mb-2"
+                                        >
+                                            {generatingPayment ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CreditCard className="w-4 h-4 mr-2" />}
+                                            Gerar Boleto/Pix (Asaas)
+                                        </Button>
+                                    )}
+
                                     <Button
                                         onClick={() => setPaymentModalOpen(true)}
                                         className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 shadow-md transition-all"
@@ -451,7 +625,7 @@ export const ChargeDetailsView: FC = () => {
                                     <Button variant="outline" className="w-full justify-start text-gray-600" disabled={!isPublished} title={!isPublished ? "Publique a cobrança para enviar" : ""}>
                                         <Share2 className="w-4 h-4 mr-2" /> Enviar Cobrança (WhatsApp)
                                     </Button>
-                                    <Button variant="ghost" className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700">
+                                    <Button variant="ghost" className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700" onClick={handleCancelCharge}>
                                         Cancelar Cobrança
                                     </Button>
                                     <div className="pt-2 border-t border-gray-100 mt-2">

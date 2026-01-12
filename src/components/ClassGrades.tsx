@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 import { Button, Input } from './ui';
 import { Loader2, Plus, Trash2, FileText, ChevronDown, Save, LayoutGrid, List as ListIcon, Calendar } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 interface ClassGradesProps {
     classId: string;
@@ -11,6 +12,7 @@ interface ClassGradesProps {
 
 export const ClassGrades: FC<ClassGradesProps> = ({ classId }) => {
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState<'list' | 'matrix'>('matrix'); // Default to Matrix for Boletim view
     const [selectedTerm, setSelectedTerm] = useState('1_bimestre');
@@ -82,7 +84,14 @@ export const ClassGrades: FC<ClassGradesProps> = ({ classId }) => {
     };
 
     const handleGenerateSubjects = async () => {
-        if (!confirm(`Deseja gerar automaticamente a pauta para o ${TERMS.find(t => t.id === selectedTerm)?.label}?`)) return;
+        const isConfirmed = await confirm({
+            title: 'Gerar Pauta',
+            message: `Deseja gerar automaticamente a pauta para o ${TERMS.find(t => t.id === selectedTerm)?.label}?`,
+            type: 'info',
+            confirmText: 'Gerar'
+        });
+
+        if (!isConfirmed) return;
 
         setLoading(true);
         try {
@@ -307,7 +316,14 @@ export const ClassGrades: FC<ClassGradesProps> = ({ classId }) => {
     };
 
     const handleDeleteAssessment = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir esta avaliação e todas as notas associadas?')) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Avaliação',
+            message: 'Tem certeza que deseja excluir esta avaliação e todas as notas associadas?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (!isConfirmed) return;
         try {
             const { error } = await supabase.from('grade_books').delete().eq('id', id);
             if (error) throw error;

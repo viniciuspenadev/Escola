@@ -41,7 +41,7 @@ export const TaskService = {
         });
     },
 
-    async create(task: Omit<Task, 'id' | 'created_at' | 'status'>) {
+    async create(task: Omit<Task, 'id' | 'created_at'>) {
         const { data, error } = await supabase
             .from('tasks')
             .insert(task)

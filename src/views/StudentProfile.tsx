@@ -7,14 +7,18 @@ import {
     ArrowLeft, Mail, GraduationCap, RefreshCw, CheckCircle
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useSystem } from '../contexts/SystemContext';
 import { AttendanceDetailTable } from '../components/AttendanceDetailTable';
 import { JustificationModal } from '../components/JustificationModal';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 export const StudentProfileView: FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
+    const { years } = useSystem();
 
     // Get Year Context from URL or Default
     const contextYear = Number(searchParams.get('year')) || new Date().getFullYear();
@@ -242,67 +246,83 @@ export const StudentProfileView: FC = () => {
                             Ver Matrícula {NEXT_YEAR}
                         </Button>
                     ) : (
-                        <Button
-                            disabled={loading}
-                            onClick={async () => {
-                                if (!confirm(`Deseja iniciar a renovação de matrícula para ${NEXT_YEAR}?`)) return;
+                        (() => {
+                            const targetYearObj = years.find(y => parseInt(y.year) === NEXT_YEAR);
+                            const canRenew = targetYearObj && ['active', 'planning'].includes(targetYearObj.status);
 
-                                setLoading(true);
-                                try {
-                                    // Map Student Data to Enrollment Details format
-                                    const renewalDetails = {
-                                        enrollment_type: 'renewal',
-                                        student_cpf: student.cpf,
-                                        rg: student.rg,
-                                        birth_date: student.birth_date,
-                                        // Address
-                                        zip_code: student.address?.zip_code,
-                                        address: student.address?.street,
-                                        address_number: student.address?.number,
-                                        neighbor: student.address?.neighbor,
-                                        city: student.address?.city,
-                                        state: student.address?.state,
-                                        complement: student.address?.complement,
-                                        // Health
-                                        blood_type: student.health_info?.blood_type,
-                                        allergies: student.health_info?.allergies,
-                                        health_insurance: student.health_info?.health_insurance,
-                                        health_insurance_number: student.health_info?.health_insurance_number,
-                                        // Responsible
-                                        parent_name: student.financial_responsible?.name,
-                                        parent_cpf: student.financial_responsible?.cpf,
-                                        parent_phone: student.financial_responsible?.phone,
-                                    };
+                            if (!canRenew) return null;
 
-                                    const { data, error } = await supabase
-                                        .from('enrollments')
-                                        .insert({
-                                            student_id: student.id,
-                                            academic_year: NEXT_YEAR, // Explicitly set next year
-                                            candidate_name: student.name,
-                                            parent_email: student.financial_responsible?.email || 'pendente@email.com',
-                                            status: 'draft',
-                                            details: renewalDetails
-                                        })
-                                        .select()
-                                        .single();
+                            return (
+                                <Button
+                                    disabled={loading}
+                                    onClick={async () => {
+                                        const isConfirmed = await confirm({
+                                            title: 'Confirmar Renovação',
+                                            message: `Deseja iniciar a renovação de matrícula para ${NEXT_YEAR}?`,
+                                            confirmText: `Sim, Renovar`,
+                                            type: 'success'
+                                        });
 
-                                    if (error) throw error;
+                                        if (!isConfirmed) return;
 
-                                    addToast('success', `Renovação para ${NEXT_YEAR} iniciada!`);
-                                    navigate(`/matriculas/${data.id}`);
+                                        setLoading(true);
+                                        try {
+                                            // Map Student Data to Enrollment Details format
+                                            const renewalDetails = {
+                                                enrollment_type: 'renewal',
+                                                student_cpf: student.cpf,
+                                                rg: student.rg,
+                                                birth_date: student.birth_date,
+                                                // Address
+                                                zip_code: student.address?.zip_code,
+                                                address: student.address?.street,
+                                                address_number: student.address?.number,
+                                                neighbor: student.address?.neighbor,
+                                                city: student.address?.city,
+                                                state: student.address?.state,
+                                                complement: student.address?.complement,
+                                                // Health
+                                                blood_type: student.health_info?.blood_type,
+                                                allergies: student.health_info?.allergies,
+                                                health_insurance: student.health_info?.health_insurance,
+                                                health_insurance_number: student.health_info?.health_insurance_number,
+                                                // Responsible
+                                                parent_name: student.financial_responsible?.name,
+                                                parent_cpf: student.financial_responsible?.cpf,
+                                                parent_phone: student.financial_responsible?.phone,
+                                            };
 
-                                } catch (err: any) {
-                                    console.error(err);
-                                    addToast('error', 'Erro ao iniciar renovação: ' + err.message);
-                                    setLoading(false);
-                                }
-                            }}
-                            className="bg-brand-600 hover:bg-brand-700 shadow-lg shadow-brand-600/20"
-                        >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Renovar para {NEXT_YEAR}
-                        </Button>
+                                            const { data, error } = await supabase
+                                                .from('enrollments')
+                                                .insert({
+                                                    student_id: student.id,
+                                                    academic_year: NEXT_YEAR, // Explicitly set next year
+                                                    candidate_name: student.name,
+                                                    parent_email: student.financial_responsible?.email || 'pendente@email.com',
+                                                    status: 'draft',
+                                                    details: renewalDetails
+                                                })
+                                                .select()
+                                                .single();
+
+                                            if (error) throw error;
+
+                                            addToast('success', `Renovação para ${NEXT_YEAR} iniciada!`);
+                                            navigate(`/matriculas/${data.id}`);
+
+                                        } catch (err: any) {
+                                            console.error(err);
+                                            addToast('error', 'Erro ao iniciar renovação: ' + err.message);
+                                            setLoading(false);
+                                        }
+                                    }}
+                                    className="bg-brand-600 hover:bg-brand-700 shadow-lg shadow-brand-600/20"
+                                >
+                                    <RefreshCw className="w-4 h-4 mr-2" />
+                                    Renovar para {NEXT_YEAR}
+                                </Button>
+                            );
+                        })()
                     )}
                 </div>
             </div>

@@ -30,10 +30,15 @@ export const usePlanningSettings = () => {
             const { data, error } = await supabase
                 .from('planning_config')
                 .select('*')
-                .single();
+                .maybeSingle(); // Changing to maybeSingle to avoid 406 on empty table
 
             if (error) throw error;
-            if (data) setConfig(data);
+            if (data) {
+                setConfig(data);
+            } else {
+                // Table is empty, keep DEFAULT_CONFIG but don't error
+                console.log('No planning config found, using defaults.');
+            }
         } catch (error) {
             console.error('Failed to fetch planning config:', error);
             // Fallback to default
@@ -70,10 +75,16 @@ export const usePlanningSettings = () => {
     // Save configuration (admin only)
     const saveConfig = async (newConfig: Partial<PlanningConfig>) => {
         try {
+            // Merge current config with new changes to ensure we have a complete object for upsert if needed
+            const payload = {
+                ...config,
+                ...newConfig,
+                id: DEFAULT_CONFIG.id // Ensure we keep the singleton ID
+            };
+
             const { error } = await supabase
                 .from('planning_config')
-                .update(newConfig)
-                .eq('id', config.id);
+                .upsert(payload); // Changed to upsert to allow creation if missing
 
             if (error) throw error;
 

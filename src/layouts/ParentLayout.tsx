@@ -7,10 +7,12 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useStudent } from '../contexts/StudentContext';
 import { NotificationCenter } from '../components/notifications/NotificationCenter';
+import { useUnreadCommunications } from '../hooks/useUnreadCommunications';
 
 export const ParentLayout: FC = () => {
     const { user, signOut } = useAuth();
     const { students, selectedStudent, setSelectedStudent, loading: studentsLoading } = useStudent();
+    const { unreadCount } = useUnreadCommunications();
     const location = useLocation();
     const navigate = useNavigate();
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -31,7 +33,7 @@ export const ParentLayout: FC = () => {
     if (!user) return <Navigate to="/login" replace />;
 
     const navItems = [
-        { path: '/pais/home', icon: Home, label: 'Início' },
+        { path: '/pais/home', icon: Home, label: 'Início', badge: unreadCount },
         { path: '/pais/diario', icon: BookOpen, label: 'Diário' },
         { path: '/pais/agenda', icon: Calendar, label: 'Agenda' },
         { path: '/pais/boletim', icon: GraduationCap, label: 'Boletim' },
@@ -41,9 +43,9 @@ export const ParentLayout: FC = () => {
     const isActive = (path: string) => location.pathname.startsWith(path);
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto shadow-2xl overflow-hidden relative">
+        <div className="h-[100dvh] bg-gray-50 flex flex-col max-w-md mx-auto shadow-2xl overflow-hidden relative">
             {/* Header (App Bar) */}
-            <header className="bg-brand-600 text-white px-5 py-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
+            <header className="bg-brand-600 text-white px-5 py-4 pt-safe-area flex justify-between items-center sticky top-0 z-20 shadow-md">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     {/* Student Selector Dropdown */}
                     <div className="relative flex-1 min-w-0" ref={dropdownRef}>
@@ -164,7 +166,7 @@ export const ParentLayout: FC = () => {
             </main>
 
             {/* Bottom Navigation (TabBar) */}
-            <nav className="bg-white border-t border-gray-100 fixed bottom-0 w-full max-w-md pb-safe-area pb-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-30">
+            <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-xl border-t border-gray-200/50 pb-safe-area z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                 <div className="flex justify-around items-center h-16">
                     {navItems.map((item) => {
                         const active = isActive(item.path);
@@ -172,13 +174,17 @@ export const ParentLayout: FC = () => {
                             <button
                                 key={item.path}
                                 onClick={() => navigate(item.path)}
-                                className={`flex flex-col items-center justify-center w-full h-full transition-all duration-300 ${active ? 'text-brand-600' : 'text-gray-400 hover:text-gray-500'
+                                className={`relative flex flex-col items-center justify-center w-full h-full transition-all duration-300 ${active ? 'text-brand-600' : 'text-gray-400 hover:text-gray-600'
                                     }`}
                             >
-                                <div className={`p-1.5 rounded-xl transition-all ${active ? 'bg-brand-50' : 'bg-transparent'}`}>
-                                    <item.icon className={`w-6 h-6 ${active ? 'fill-current' : ''}`} strokeWidth={active ? 2.5 : 2} />
+                                {active && (
+                                    <div className="absolute top-0 w-12 h-1 bg-brand-500 rounded-b-full shadow-[0_2px_8px_rgba(99,102,241,0.5)] animate-pulse" />
+                                )}
+
+                                <div className={`relative p-1.5 rounded-xl transition-all ${active ? 'bg-brand-50/50 -translate-y-1' : 'bg-transparent'}`}>
+                                    <item.icon className="w-6 h-6" strokeWidth={active ? 2.5 : 2} />
                                 </div>
-                                <span className={`text-[10px] font-medium mt-1 ${active ? 'scale-105' : 'scale-100'}`}>
+                                <span className={`text-[10px] font-bold mt-0.5 ${active ? 'scale-105' : 'scale-100'}`}>
                                     {item.label}
                                 </span>
                             </button>

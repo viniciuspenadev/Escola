@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { Button, Badge } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
+
 import {
     Users,
     Plus,
@@ -11,8 +12,7 @@ import {
     Calendar,
     Sun,
     Moon,
-    Clock,
-    GraduationCap
+    Clock
 } from 'lucide-react';
 import type { Class } from '../types';
 
@@ -101,13 +101,12 @@ export const ClassListView: FC = () => {
     return (
         <div className="space-y-8 animate-fade-in pb-20">
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/50 backdrop-blur-sm p-6 rounded-2xl border border-white/20 shadow-sm">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                        <GraduationCap className="w-8 h-8 text-brand-600" />
+                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
                         Gestão de Turmas
                     </h1>
-                    <p className="text-gray-500 mt-1">Gerencie turmas, alunos e professores em um só lugar.</p>
+                    <p className="text-gray-500">Gerencie turmas, alunos e professores em um só lugar.</p>
                 </div>
                 <Button className="bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/20 px-6" onClick={() => navigate('/turmas/nova')}>
                     <Plus className="w-5 h-5 mr-2" />

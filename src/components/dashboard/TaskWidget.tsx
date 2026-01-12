@@ -1,11 +1,13 @@
 import { type FC, useEffect, useState } from 'react';
-import { Card, Button } from '../ui';
+import { Button } from '../ui';
 import { TaskService, type Task } from '../../services/TaskService';
 import { CheckCircle, Clock, Plus, AlertTriangle, AlertOctagon, FileText } from 'lucide-react';
+import { TaskCreateModal } from './TaskCreateModal';
 
 export const TaskWidget: FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
     useEffect(() => {
         loadTasks();
@@ -54,13 +56,18 @@ export const TaskWidget: FC = () => {
     if (loading) return <div className="h-64 bg-gray-50 rounded-xl animate-pulse"></div>;
 
     return (
-        <Card className="h-full flex flex-col">
+        <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-4 px-4 pt-4">
                 <h3 className="font-bold text-gray-900 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-brand-600" />
                     Lista de Tarefas
                 </h3>
-                <Button variant="ghost" size="sm" className="text-brand-600">
+                <Button
+                    variant="primary"
+                    size="sm"
+                    className="shadow-sm"
+                    onClick={() => setIsCreateModalOpen(true)}
+                >
                     <Plus className="w-4 h-4 mr-1" /> Nova
                 </Button>
             </div>
@@ -70,6 +77,13 @@ export const TaskWidget: FC = () => {
                     <div className="text-center py-10 text-gray-400">
                         <CheckCircle className="w-12 h-12 mx-auto mb-2 opacity-20" />
                         <p>Tudo em dia! Nenhuma tarefa pendente.</p>
+                        <Button
+                            variant="ghost"
+                            className="text-brand-600 mt-2 hover:bg-brand-50"
+                            onClick={() => setIsCreateModalOpen(true)}
+                        >
+                            Criar primeira tarefa
+                        </Button>
                     </div>
                 ) : (
                     tasks.map(task => (
@@ -85,7 +99,7 @@ export const TaskWidget: FC = () => {
                                 {/* Checkbox-like button */}
                                 <button
                                     onClick={() => handleComplete(task.id)}
-                                    className="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-colors"
+                                    className="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-colors shrink-0"
                                     title="Marcar como concluída"
                                 >
                                     <CheckCircle className="w-3 h-3 text-emerald-600 opacity-0 hover:opacity-100" />
@@ -128,9 +142,11 @@ export const TaskWidget: FC = () => {
                 )}
             </div>
 
-            <div className="p-3 bg-gray-50 border-t border-gray-100 text-center text-xs text-gray-400">
-                {tasks.length} tarefas pendentes
-            </div>
-        </Card>
+            <TaskCreateModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={loadTasks}
+            />
+        </div>
     );
 };

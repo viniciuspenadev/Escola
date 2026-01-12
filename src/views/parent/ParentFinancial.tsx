@@ -1,10 +1,12 @@
 import { type FC, useState, useEffect, useCallback } from 'react';
 import {
     CreditCard, FileText, CheckCircle2, AlertCircle,
-    Calendar, Copy, Barcode, ChevronDown, ChevronUp, Download, Handshake
+    Calendar, Copy, Barcode, ChevronDown, ChevronUp, Download, Handshake, ExternalLink, Share2
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useStudent } from '../../contexts/StudentContext';
+import { Modal } from '../../components/ui/Modal';
+import { Button } from '../../components/ui/Button';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -16,6 +18,9 @@ interface Installment {
     due_date: string;
     status: 'pending' | 'overdue' | 'paid' | 'cancelled';
     paid_at?: string;
+    billing_url?: string;
+    pix_qr_code?: string;
+    gateway_integration_id?: string;
     metadata?: {
         pix_key?: string;
         boleto_code?: string;
@@ -50,6 +55,7 @@ export const ParentFinancial: FC = () => {
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [availableYears, setAvailableYears] = useState<number[]>([]);
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [activeBoleto, setActiveBoleto] = useState<string | null>(null);
 
     useEffect(() => {
         if (selectedStudent) {
@@ -124,6 +130,28 @@ export const ParentFinancial: FC = () => {
             setLoading(false);
         }
     }, [selectedStudent, selectedYear]);
+
+    const handleShare = async () => {
+        if (!activeBoleto) return;
+
+        const shareData = {
+            title: 'Fatura Escolar',
+            text: 'Segue o link para pagamento da fatura escolar:',
+            url: activeBoleto
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                // Fallback to WhatsApp
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`${shareData.text} ${shareData.url}`)}`;
+                window.open(whatsappUrl, '_blank');
+            }
+        } catch (err) {
+            console.error('Error sharing:', err);
+        }
+    };
 
     const handleCopy = (text: string, id: string) => {
         navigator.clipboard.writeText(text);
@@ -321,7 +349,18 @@ export const ParentFinancial: FC = () => {
                                     {/* Quick Actions (Open Tab) */}
                                     {activeTab === 'open' && (
                                         <div className="flex gap-2">
-                                            {item.metadata?.pix_key && (
+                                            {item.billing_url ? (
+                                                <button
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveBoleto(item.billing_url!);
+                                                    }}
+                                                >
+                                                    <Barcode className="w-3.5 h-3.5" />
+                                                    Pagar Agora
+                                                </button>
+                                            ) : item.metadata?.pix_key && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -396,42 +435,62 @@ export const ParentFinancial: FC = () => {
                                         )}
 
                                         {/* Payment Methods (Active only) */}
-                                        {activeTab === 'open' && item.metadata && (
+                                        {activeTab === 'open' && (item.billing_url || item.metadata) && (
                                             <div className="space-y-2 pt-2 border-t border-gray-100">
                                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Opções de Pagamento</p>
 
-                                                {item.metadata.boleto_code && (
-                                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                                        <div className="flex justify-between items-center mb-1">
-                                                            <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
-                                                                <Barcode className="w-3.5 h-3.5" /> Código de Barras
-                                                            </span>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleCopy(item.metadata!.boleto_code!, item.id + '-bar');
-                                                                }}
-                                                                className="text-brand-600 text-xs font-medium"
-                                                            >
-                                                                {copiedId === item.id + '-bar' ? 'Copiado' : 'Copiar'}
-                                                            </button>
-                                                        </div>
-                                                        <p className="text-[10px] font-mono text-gray-500 break-all leading-tight">
-                                                            {item.metadata.boleto_code}
+                                                {item.billing_url ? (
+                                                    <div className="flex flex-col gap-2">
+                                                        <Button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveBoleto(item.billing_url!);
+                                                            }}
+                                                            className="flex items-center justify-center gap-2 w-full py-3 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 transition-colors shadow-sm"
+                                                        >
+                                                            <Barcode className="w-4 h-4" />
+                                                            Abrir Fatura Digital
+                                                        </Button>
+                                                        <p className="text-[10px] text-center text-gray-400">
+                                                            Pix, Boleto e Cartão
                                                         </p>
                                                     </div>
-                                                )}
+                                                ) : (
+                                                    <>
+                                                        {item.metadata?.boleto_code && (
+                                                            <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                                                                        <Barcode className="w-3.5 h-3.5" /> Código de Barras
+                                                                    </span>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleCopy(item.metadata!.boleto_code!, item.id + '-bar');
+                                                                        }}
+                                                                        className="text-brand-600 text-xs font-medium"
+                                                                    >
+                                                                        {copiedId === item.id + '-bar' ? 'Copiado' : 'Copiar'}
+                                                                    </button>
+                                                                </div>
+                                                                <p className="text-[10px] font-mono text-gray-500 break-all leading-tight">
+                                                                    {item.metadata.boleto_code}
+                                                                </p>
+                                                            </div>
+                                                        )}
 
-                                                {item.metadata.boleto_url && (
-                                                    <a
-                                                        href={item.metadata.boleto_url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                                                    >
-                                                        <Download className="w-3.5 h-3.5" />
-                                                        Baixar Fatura PDF
-                                                    </a>
+                                                        {item.metadata?.boleto_url && (
+                                                            <a
+                                                                href={item.metadata.boleto_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                                            >
+                                                                <Download className="w-3.5 h-3.5" />
+                                                                Baixar Fatura PDF
+                                                            </a>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         )}
@@ -454,6 +513,39 @@ export const ParentFinancial: FC = () => {
                     ))}
                 </div>
             )}
+
+            {/* Invoice Modal */}
+            <Modal
+                isOpen={!!activeBoleto}
+                onClose={() => setActiveBoleto(null)}
+                title="Fatura Digital"
+                size="xl"
+                footer={
+                    <div className="flex justify-between w-full items-center">
+                        <span className="text-xs text-gray-500">Não carregou?</span>
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={handleShare}>
+                                <Share2 className="w-3 h-3 mr-2" />
+                                Compartilhar
+                            </Button>
+                            <Button variant="outline" onClick={() => window.open(activeBoleto!, '_blank')}>
+                                Abrir no Navegador <ExternalLink className="w-3 h-3 ml-2" />
+                            </Button>
+                        </div>
+                    </div>
+                }
+            >
+                <div className="w-full h-[65vh] bg-gray-100 rounded-lg overflow-hidden relative">
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                        <p className="animate-pulse">Carregando gateway seguro...</p>
+                    </div>
+                    <iframe
+                        src={activeBoleto || ''}
+                        className="w-full h-full relative z-10 border-0"
+                        title="Asaas Invoice"
+                    />
+                </div>
+            </Modal>
         </div>
     );
 };

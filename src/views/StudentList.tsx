@@ -63,14 +63,18 @@ const AttendanceBar = ({ rate }: { rate: number }) => {
     );
 }
 
+import { useSystem } from '../contexts/SystemContext';
+
 export const StudentListView: FC = () => {
     const navigate = useNavigate();
+    const { years, currentYear: activeSystemYear } = useSystem();
     const [students, setStudents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Initial Year (Try to detect or default to current)
+    // Initial Year (Dynamic Default)
     const currentYear = new Date().getFullYear();
-    const [yearFilter, setYearFilter] = useState<number>(currentYear);
+    const defaultYear = activeSystemYear ? parseInt(activeSystemYear.year) : currentYear;
+    const [yearFilter, setYearFilter] = useState<number>(defaultYear);
 
     // Other Filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -218,21 +222,25 @@ export const StudentListView: FC = () => {
 
             {/* Year Tabs - Explicit Context */}
             <div className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 flex overflow-x-auto">
-                {[2024, 2025, 2026].map(year => (
-                    <button
-                        key={year}
-                        onClick={() => setYearFilter(year)}
-                        className={`
-                            flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap
-                            ${year === yearFilter
-                                ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-100'
-                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                            }
-                        `}
-                    >
-                        Ano Letivo {year} {year > currentYear && '(Futuro)'}
-                    </button>
-                ))}
+                {years.map(yearObj => {
+                    const yearInt = parseInt(yearObj.year);
+                    return (
+                        <button
+                            key={yearObj.id}
+                            onClick={() => setYearFilter(yearInt)}
+                            className={`
+                                flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center justify-center gap-2
+                                ${yearInt === yearFilter
+                                    ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-100'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }
+                            `}
+                        >
+                            Ano Letivo {yearObj.year}
+                            {yearObj.status === 'active' && <span className="w-2 h-2 rounded-full bg-green-500" title="Ano Ativo" />}
+                        </button>
+                    )
+                })}
             </div>
 
             <div className="flex flex-col md:flex-row gap-3 mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100">

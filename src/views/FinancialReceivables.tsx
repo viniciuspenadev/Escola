@@ -9,25 +9,53 @@ import {
     EyeOff,
     TrendingUp,
     FileText,
-    Clock
+    Clock,
+    QrCode,
+
+    CreditCard,
+    Loader2
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useToast } from '../contexts/ToastContext';
 import { useNavigate } from 'react-router-dom';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 export const FinancialReceivablesView: FC = () => {
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [loading, setLoading] = useState(true);
     const [installments, setInstallments] = useState<any[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
+
+    // Gateway State
+    const [gatewayConfig, setGatewayConfig] = useState<any>(null);
+    const [generatingPaymentId, setGeneratingPaymentId] = useState<string | null>(null);
 
     // Advanced Filters - Defaults to "All" for maximum visibility
     const [statusFilter, setStatusFilter] = useState('all');
     const [monthFilter, setMonthFilter] = useState('all');
     const [yearFilter, setYearFilter] = useState('all'); // all years by default
     const [searchTerm, setSearchTerm] = useState('');
+
+    useEffect(() => {
+        fetchGatewayConfig();
+    }, []);
+
+    const fetchGatewayConfig = async () => {
+        const { data } = await supabase
+            .from('app_settings')
+            .select('value')
+            .eq('key', 'finance_gateway_config')
+            .single();
+
+        if (data?.value) {
+            // Check if stringified or object (Supabase returns JSONB as object usually, but let's be safe)
+            const config = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            setGatewayConfig(config);
+        }
+    };
 
     const fetchInstallments = async () => {
         setLoading(true);
@@ -100,8 +128,93 @@ export const FinancialReceivablesView: FC = () => {
         );
     };
 
-    const handleBulkAction = async (action: 'publish' | 'hide' | 'mark_paid') => {
-        if (!confirm(`Tem certeza que deseja aplicar esta ação em ${selectedIds.length} itens?`)) return;
+    const handleGeneratePayment = async (installment: any) => {
+        // Prevent click propogation if called from row
+
+        if (!gatewayConfig || gatewayConfig.provider !== 'asaas') {
+            addToast('info', 'Configure o Gateway Asaas nas configurações para usar este recurso.');
+            return;
+        }
+
+        const isConfirmed = await confirm({
+            title: 'Gerar Cobrança (Pix/Boleto)',
+            message: `Deseja gerar uma cobrança no Asaas para ${installment.enrollment?.candidate_name}? O responsável receberá o link por e-mail/WhatsApp se configurado.`,
+            confirmText: 'Gerar Cobrança'
+        });
+
+        if (!isConfirmed) return;
+
+        setGeneratingPaymentId(installment.id);
+        try {
+            // CALL EDGE FUNCTION (STUB)
+            // const { data, error } = await supabase.functions.invoke('send-payment-link', {
+            //     body: { installmentId: installment.id }
+            // });
+
+            // For now, simulate functionality or wait for backend implementation
+            console.log('Generating payment for:', installment.id);
+
+            // Simulate success for UI testing (remove this when backend is ready)
+            // await new Promise(r => setTimeout(r, 1500));
+            // addToast('success', 'Cobrança gerada com sucesso! (Simulação)');
+
+            // REAL IMPLEMENTATION:
+            const { error } = await supabase.functions.invoke('send-payment-link', {
+                body: { installment_ids: [installment.id] }
+            });
+
+            if (error) throw error;
+
+            addToast('success', 'Cobrança gerada com sucesso!');
+            fetchInstallments();
+        } catch (error: any) {
+            console.error(error);
+            addToast('error', 'Erro ao gerar cobrança: ' + (error.message || 'Erro desconhecido'));
+        } finally {
+            setGeneratingPaymentId(null);
+        }
+    };
+
+    const handleBulkAction = async (action: 'publish' | 'hide' | 'mark_paid' | 'generate_boleto') => {
+        // ... (Existing implementation for publish/hide/mark_paid)
+        if (action === 'generate_boleto') {
+            if (!gatewayConfig || gatewayConfig.provider !== 'asaas') {
+                addToast('info', 'Configure o Gateway Asaas para usar este recurso.');
+                return;
+            }
+            const isConfirmed = await confirm({
+                title: 'Gerar Cobranças em Massa',
+                message: `Deseja gerar Pix/Boleto para ${selectedIds.length} mensalidades selecionadas?`,
+                confirmText: 'Gerar Todas'
+            });
+            if (!isConfirmed) return;
+
+            setIsBulkActionLoading(true);
+            try {
+                const { error } = await supabase.functions.invoke('send-payment-link', {
+                    body: { installment_ids: selectedIds }
+                });
+                if (error) throw error;
+                addToast('success', 'Processo de geração iniciado!');
+                fetchInstallments();
+                setSelectedIds([]);
+            } catch (err: any) {
+                addToast('error', 'Erro ao gerar: ' + err.message);
+            } finally {
+                setIsBulkActionLoading(false);
+            }
+            return;
+        }
+
+        // Existing logic for local updates
+        const isConfirmed = await confirm({
+            title: 'Ação em Massa',
+            message: `Tem certeza que deseja aplicar esta ação em ${selectedIds.length} itens?`,
+            type: 'warning',
+            confirmText: 'Confirmar'
+        });
+
+        if (!isConfirmed) return;
 
         setIsBulkActionLoading(true);
         try {
@@ -327,9 +440,8 @@ export const FinancialReceivablesView: FC = () => {
                                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Aluno</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Ref.</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Valor</th>
-                                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Visibilidade</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Pagamento</th>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Gateway</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -341,13 +453,13 @@ export const FinancialReceivablesView: FC = () => {
                                         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-48" /></td>
                                         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16" /></td>
                                         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20" /></td>
-                                        <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded-full w-24" /></td>
                                         <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24" /></td>
+                                        <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded w-24" /></td>
                                     </tr>
                                 ))
                             ) : installments.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-24 text-center">
+                                    <td colSpan={7} className="px-6 py-24 text-center">
                                         <div className="flex flex-col items-center justify-center text-gray-400">
                                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                                                 <Search className="w-8 h-8 text-gray-300" />
@@ -400,29 +512,39 @@ export const FinancialReceivablesView: FC = () => {
                                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.value)}
                                         </td>
                                         <td className="px-6 py-4">
-                                            {inst.is_published ? (
-                                                <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded-md w-fit border border-blue-100">
-                                                    <Eye className="w-3.5 h-3.5" /> Publicado
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md w-fit border border-gray-200" title="Não visível para o responsável">
-                                                    <EyeOff className="w-3.5 h-3.5" /> Rascunho
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
                                             {getStatusBadge(inst.status, inst.due_date)}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            {inst.paid_at ? (
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-semibold text-emerald-700">
-                                                        {new Date(inst.paid_at).toLocaleDateString('pt-BR')}
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-400 uppercase">
-                                                        Via {inst.payment_method || 'Manual'}
-                                                    </span>
+                                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                            {/* GATEWAY LOGIC */}
+                                            {inst.billing_url ? (
+                                                <div className="flex items-center gap-2">
+                                                    <a
+                                                        href={inst.billing_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-1.5 text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-1.5 rounded-md border border-brand-100 hover:bg-brand-100 transition-colors"
+                                                    >
+                                                        <QrCode className="w-3.5 h-3.5" />
+                                                        Boleto/Pix
+                                                    </a>
                                                 </div>
+                                            ) : gatewayConfig?.provider === 'asaas' && inst.status === 'pending' ? (
+                                                <Button
+                                                    size="sm"
+                                                    disabled={generatingPaymentId === inst.id}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleGeneratePayment(inst);
+                                                    }}
+                                                    className="h-7 text-xs bg-gray-900 hover:bg-gray-800 text-white"
+                                                >
+                                                    {generatingPaymentId === inst.id ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                                                    ) : (
+                                                        <CreditCard className="w-3 h-3 mr-1.5" />
+                                                    )}
+                                                    Gerar
+                                                </Button>
                                             ) : (
                                                 <span className="text-xs text-gray-400">-</span>
                                             )}
@@ -446,6 +568,19 @@ export const FinancialReceivablesView: FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Gateway Bulk Action */}
+                        {gatewayConfig?.provider === 'asaas' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleBulkAction('generate_boleto')}
+                                disabled={isBulkActionLoading}
+                                className="border-gray-300 text-gray-700 hover:bg-gray-50 mr-2"
+                            >
+                                <QrCode className="w-4 h-4 mr-2 text-brand-600" /> Gerar Boletos
+                            </Button>
+                        )}
+
                         <Button
                             variant="outline"
                             size="sm"

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 // Constants
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -47,6 +48,7 @@ import { useAuth } from '../contexts/AuthContext';
 export const AgendaView: FC = () => {
     const { user } = useAuth();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [viewDate, setViewDate] = useState(new Date());
     const [events, setEvents] = useState<Event[]>([]);
     const [classes, setClasses] = useState<ClassOption[]>([]);
@@ -191,9 +193,9 @@ export const AgendaView: FC = () => {
             const { data } = supabase.storage.from('photos').getPublicUrl(filePath);
 
             setCurrentEvent(prev => ({ ...prev, image_url: data.publicUrl }));
-            alert('Imagem enviada com sucesso!'); // Simple feedback
+            addToast('success', 'Imagem enviada com sucesso!');
         } catch (error: any) {
-            alert('Erro ao enviar imagem: ' + error.message);
+            addToast('error', 'Erro ao enviar imagem: ' + error.message);
         } finally {
             setUploading(false);
         }
@@ -242,7 +244,15 @@ export const AgendaView: FC = () => {
 
     const handleDeleteEvent = async () => {
         if (!currentEvent.id) return;
-        if (!confirm('Tem certeza que deseja excluir este evento?')) return;
+
+        const isConfirmed = await confirm({
+            title: 'Excluir Evento',
+            message: 'Tem certeza que deseja excluir este evento?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (!isConfirmed) return;
 
         try {
             const { error } = await supabase.from('events').delete().eq('id', currentEvent.id);
@@ -338,8 +348,8 @@ export const AgendaView: FC = () => {
             <div className="flex-1 flex flex-col gap-4 h-full">
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Agenda Escolar</h1>
-                        <p className="text-gray-500 text-sm">Organização e planejamento.</p>
+                        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Agenda Escolar</h1>
+                        <p className="text-gray-500">Organização e planejamento.</p>
                     </div>
 
                     {/* Filter Bar */}

@@ -1,7 +1,7 @@
 
 import { type FC, useState } from 'react';
 import { useSystem } from '../contexts/SystemContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { Button, Card, Input } from '../components/ui';
 import { Loader2, Plus, ArrowRight } from 'lucide-react';
@@ -9,8 +9,16 @@ import { Loader2, Plus, ArrowRight } from 'lucide-react';
 export const EnrollmentCreateView: FC = () => {
     const { availableYears, planningYear, currentYear } = useSystem();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    // URL Params for Pre-fill (Leads conversion)
+    const initialName = searchParams.get('name') || '';
+    const parentEmail = searchParams.get('parentEmail') || '';
+    const leadId = searchParams.get('leadId');
+    const childId = searchParams.get('childId');
+
     const [loading, setLoading] = useState(false);
-    const [candidateName, setCandidateName] = useState('');
+    const [candidateName, setCandidateName] = useState(initialName);
 
     // Default to Planning Year (Next Year) if available, otherwise Current Year
     const [selectedYear, setSelectedYear] = useState<number>(() => {
@@ -30,10 +38,14 @@ export const EnrollmentCreateView: FC = () => {
                 .from('enrollments')
                 .insert({
                     candidate_name: candidateName,
-                    parent_email: 'pendente@email.com',
+                    parent_email: parentEmail || 'pendente@email.com',
                     status: 'draft',
                     academic_year: selectedYear,
-                    details: {}
+                    details: {
+                        lead_id: leadId,
+                        child_id: childId,
+                        source: leadId ? 'crm' : 'manual'
+                    }
                 })
                 .select()
                 .single();

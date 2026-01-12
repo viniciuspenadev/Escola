@@ -125,12 +125,12 @@ export const AttendanceManagementView: FC = () => {
     );
 
     return (
-        <div className="space-y-8 animate-fade-in pb-20">
+        <div className="space-y-6 animate-fade-in pb-20">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Gestão de Faltas</h1>
-                    <p className="text-sm text-gray-500 mt-1">Monitoramento de frequência e evasão escolar.</p>
+                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Gestão de Faltas</h1>
+                    <p className="text-gray-500">Monitoramento de frequência e evasão escolar.</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <select

@@ -1,4 +1,4 @@
-import { type FC, useState } from 'react';
+import { type FC, useState, useEffect } from 'react';
 import { useSystem } from '../contexts/SystemContext';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -12,13 +12,23 @@ export const ClassCreateView: FC = () => {
     const { addToast } = useToast();
     const { availableYears, planningYear, currentYear } = useSystem();
     const [loading, setLoading] = useState(false);
+    const [timelines, setTimelines] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchTimelines = async () => {
+            const { data } = await supabase.from('daily_timelines').select('id, name');
+            if (data) setTimelines(data);
+        };
+        fetchTimelines();
+    }, []);
 
     const { register, handleSubmit, formState: { errors } } = useForm({
         defaultValues: {
             name: '',
             school_year: planningYear ? planningYear.year : (currentYear ? currentYear.year : new Date().getFullYear()),
             shift: 'morning',
-            capacity: 25
+            capacity: 25,
+            daily_timeline_id: ''
         }
     });
 
@@ -32,7 +42,8 @@ export const ClassCreateView: FC = () => {
                     school_year: Number(data.school_year),
                     shift: data.shift,
                     capacity: Number(data.capacity),
-                    status: 'active'
+                    status: 'active',
+                    daily_timeline_id: data.daily_timeline_id || null
                 });
 
             if (dbError) throw dbError;
@@ -104,6 +115,19 @@ export const ClassCreateView: FC = () => {
                                 <option value="afternoon">Tarde</option>
                                 <option value="full">Integral</option>
                                 <option value="night">Noite</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Rotina Padrão (Timeline)</label>
+                            <select
+                                {...register('daily_timeline_id')}
+                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                            >
+                                <option value="">Nenhuma (Padrão)</option>
+                                {timelines.map(t => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
                             </select>
                         </div>
 

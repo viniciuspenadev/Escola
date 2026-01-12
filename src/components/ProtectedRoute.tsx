@@ -26,6 +26,8 @@ export const ProtectedRoute: FC<ProtectedRouteProps> = ({
     // Check if user has access to this route
     const hasAccess = hasRouteAccess(user.role, currentPath);
 
+
+
     // If user doesn't have access, redirect to their default route
     if (!hasAccess) {
         const defaultRoute = getDefaultRoute(user.role);

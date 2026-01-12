@@ -1,10 +1,13 @@
 import { type FC, useState, useEffect } from 'react';
-import { Save, Clock, Info } from 'lucide-react';
+import { Save, Clock, Info, Settings, MessageSquare, School, DollarSign } from 'lucide-react';
 import { supabase } from '../../services/supabase';
-
-
+import { Button } from '../../components/ui';
+import { CommunicationSettings } from './CommunicationSettings';
+import { SchoolInfoSettings } from './SchoolInfoSettings';
+import { FinancialSettingsTab } from './FinancialSettingsTab';
 
 export const GeneralSettings: FC = () => {
+    const [activeTab, setActiveTab] = useState<'school' | 'global' | 'communication' | 'finance'>('finance');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [diaryTime, setDiaryTime] = useState('17:00');
@@ -34,7 +37,7 @@ export const GeneralSettings: FC = () => {
         }
     };
 
-    const handleSave = async () => {
+    const handleSaveGlobal = async () => {
         setSaving(true);
         setMessage(null);
 
@@ -49,9 +52,8 @@ export const GeneralSettings: FC = () => {
                 });
 
             if (error) throw error;
-            setMessage({ type: 'success', text: 'Configurações salvas com sucesso!' });
+            setMessage({ type: 'success', text: 'Configurações globais salvas com sucesso!' });
 
-            // Auto hide message
             setTimeout(() => setMessage(null), 3000);
         } catch (err) {
             console.error('Error saving settings:', err);
@@ -66,12 +68,11 @@ export const GeneralSettings: FC = () => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6 space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Configurações Gerais</h1>
-                    <p className="text-gray-600">Gerencie comportamentos globais do aplicativo.</p>
-                </div>
+        <div className="space-y-6 animate-fade-in pb-20">
+            {/* Main Header */}
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900">Configurações do Sistema</h1>
+                <p className="text-gray-500">Gerencie todos os aspectos globais e integrações da plataforma.</p>
             </div>
 
             {/* Notification Banner */}
@@ -83,46 +84,123 @@ export const GeneralSettings: FC = () => {
                 </div>
             )}
 
-            {/* Diary Settings Card */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                    <div className="flex items-center gap-2 mb-1">
-                        <Clock className="w-5 h-5 text-brand-600" />
-                        <h2 className="font-semibold text-gray-900">Diário Digital</h2>
-                    </div>
-                    <p className="text-sm text-gray-500">
-                        Controle quando as informações diárias são disponibilizadas para os pais.
-                    </p>
-                </div>
+            {/* Tabs Navigation */}
+            <div className="border-b border-gray-200 overflow-x-auto">
+                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button
+                        onClick={() => setActiveTab('school')}
+                        className={`
+                            whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+                            ${activeTab === 'school'
+                                ? 'border-brand-600 text-brand-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        <School className="w-4 h-4" />
+                        Dados da Escola
+                    </button>
 
-                <div className="p-6 space-y-6">
-                    <div className="max-w-md">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Horário de Divulgação
-                        </label>
-                        <div className="flex gap-4 items-center">
-                            <input
-                                type="time"
-                                value={diaryTime}
-                                onChange={(e) => setDiaryTime(e.target.value)}
-                                className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 sm:text-sm p-2.5 border"
-                            />
-                            <button
-                                onClick={handleSave}
-                                disabled={saving}
-                                className="flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
-                            >
-                                <Save className="w-4 h-4" />
-                                {saving ? 'Salvando...' : 'Salvar Alteração'}
-                            </button>
+                    <button
+                        onClick={() => setActiveTab('global')}
+                        className={`
+                            whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+                            ${activeTab === 'global'
+                                ? 'border-brand-600 text-brand-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        <Settings className="w-4 h-4" />
+                        Geral & Rotina
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('communication')}
+                        className={`
+                            whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+                            ${activeTab === 'communication'
+                                ? 'border-brand-600 text-brand-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        <MessageSquare className="w-4 h-4" />
+                        WhatsApp & Comunicação
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('finance')}
+                        className={`
+                            whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+                            ${activeTab === 'finance'
+                                ? 'border-brand-600 text-brand-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        <DollarSign className="w-4 h-4" />
+                        Financeiro
+                    </button>
+                </nav>
+            </div>
+
+            {/* Tab: School Info */}
+            {activeTab === 'school' && (
+                <SchoolInfoSettings />
+            )}
+
+            {/* Tab: Global Settings */}
+            {activeTab === 'global' && (
+                <div className="space-y-6 animate-fade-in">
+                    {/* Diary Settings Card */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-w-2xl">
+                        <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                            <div className="flex items-center gap-2 mb-1">
+                                <Clock className="w-5 h-5 text-brand-600" />
+                                <h2 className="font-semibold text-gray-900">Diário Digital</h2>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                                Controle de horário para liberação automática das atualizações e notificações.
+                            </p>
                         </div>
-                        <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                            <Info className="w-3 h-3" />
-                            O resumo do dia e o diário de hoje ficarão ocultos para os pais até este horário.
-                        </p>
+
+                        <div className="p-6 space-y-6">
+                            <div className="max-w-md">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Horário de Liberação (Notificações)
+                                </label>
+                                <div className="flex gap-4">
+                                    <input
+                                        type="time"
+                                        value={diaryTime}
+                                        onChange={(e) => setDiaryTime(e.target.value)}
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 sm:text-sm p-2.5 border"
+                                    />
+                                    <Button onClick={handleSaveGlobal} disabled={saving} className="bg-brand-600 text-white shrink-0">
+                                        {saving ? <Settings className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                                        {saving ? '...' : 'Salvar'}
+                                    </Button>
+                                </div>
+                                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                                    <Info className="w-3 h-3" />
+                                    Notificações no WhatsApp só serão enviadas após este horário. Atualizações anteriores ficam agendadas.
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
+
+            {/* Tab: Communication Settings */}
+            {activeTab === 'communication' && (
+                <div className="animate-fade-in">
+                    <CommunicationSettings embedded={true} />
+                </div>
+            )}
+
+            {/* Tab: Financial Settings */}
+            {activeTab === 'finance' && (
+                <div className="animate-fade-in">
+                    <FinancialSettingsTab />
+                </div>
+            )}
         </div>
     );
 };

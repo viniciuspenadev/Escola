@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../services/supabase';
 import {
-    Calendar as CalendarIcon,
     School,
     BarChart3,
     Settings,
@@ -159,12 +158,11 @@ export const PlanningDashboard = () => {
     };
 
     return (
-        <div className="space-y-6 animate-fade-in p-6 pb-20">
+        <div className="space-y-6 animate-fade-in pb-20">
             {/* Header */}
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                 <div className="space-y-1">
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <CalendarIcon className="w-7 h-7 text-brand-600" />
+                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
                         Planejamento de Aulas
                     </h1>
                     <p className="text-gray-500">Gerencie o conteúdo programático das suas turmas</p>

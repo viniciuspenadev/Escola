@@ -4,11 +4,13 @@ import { supabase } from '../../services/supabase';
 import { Button, Card, Badge } from '../../components/ui';
 import { Calendar, CheckCircle2, AlertCircle, Plus, Lock, Unlock, Trash2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 export const AcademicYearsSettings: FC = () => {
     const { refreshSystem } = useSystem();
     const [years, setYears] = useState<SchoolYear[]>([]);
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
 
     useEffect(() => {
         fetchYears();
@@ -102,7 +104,14 @@ export const AcademicYearsSettings: FC = () => {
             return;
         }
 
-        if (!confirm(`Tem certeza que deseja EXCLUIR o ano letivo ${yearValue}? Todas as turmas e matrículas vinculadas podem ficar órfãs.`)) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Ano Letivo',
+            message: `Tem certeza que deseja EXCLUIR o ano letivo ${yearValue}? Todas as turmas e matrículas vinculadas podem ficar órfãs.`,
+            type: 'danger',
+            confirmText: 'Excluir Definitivamente'
+        });
+
+        if (!isConfirmed) return;
 
         try {
             const { error } = await supabase.from('school_years').delete().eq('id', id);

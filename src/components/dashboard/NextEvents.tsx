@@ -1,5 +1,5 @@
 import { type FC, useEffect, useState } from 'react';
-import { Card, Button } from '../ui';
+import { Button } from '../ui';
 import { supabase } from '../../services/supabase';
 import { Calendar, MapPin, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -64,16 +64,16 @@ export const NextEvents: FC = () => {
     };
 
     if (loading) return (
-        <Card className="h-full min-h-[300px] p-6 animate-pulse bg-gray-50/50">
+        <div className="h-full min-h-[300px] p-6 animate-pulse bg-gray-50/50">
             <div className="h-4 bg-gray-200 rounded w-1/3 mb-6"></div>
             <div className="space-y-4">
                 {[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-200 rounded-xl"></div>)}
             </div>
-        </Card>
+        </div>
     );
 
     return (
-        <Card className="h-full flex flex-col p-6">
+        <div className="h-full flex flex-col p-4">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
                     <Calendar className="w-5 h-5 text-brand-600" />
@@ -101,33 +101,28 @@ export const NextEvents: FC = () => {
                         const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
                         return (
-                            <div key={event.id} className="flex gap-4 group cursor-pointer hover:bg-gray-50 p-3 rounded-xl transition-colors -mx-2">
-                                {/* Date Box */}
-                                <div className="flex flex-col items-center justify-center w-14 h-14 bg-brand-50 rounded-xl text-brand-700 shrink-0 border border-brand-100/50">
-                                    <span className="text-xs font-bold opacity-60">{month}</span>
+                            <div key={event.id} className="flex gap-4 group cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors" onClick={() => navigate('/agenda')}>
+                                <div className="flex flex-col items-center justify-center bg-brand-50 rounded-xl w-14 h-14 shrink-0 text-brand-700">
+                                    <span className="text-xs font-bold uppercase">{month}</span>
                                     <span className="text-xl font-bold leading-none">{day}</span>
                                 </div>
-
-                                {/* Info */}
-                                <div className="flex-1 min-w-0 py-0.5">
-                                    <h4 className="font-bold text-gray-900 truncate group-hover:text-brand-700 transition-colors">
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="font-semibold text-gray-900 truncate group-hover:text-brand-600 transition-colors">
                                         {event.title}
                                     </h4>
-                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                                         <span className="flex items-center gap-1">
                                             <Clock className="w-3 h-3" />
                                             {time}
                                         </span>
                                         {event.location && (
-                                            <span className="flex items-center gap-1 truncate max-w-[120px]">
+                                            <span className="flex items-center gap-1">
                                                 <MapPin className="w-3 h-3" />
                                                 {event.location}
                                             </span>
                                         )}
                                     </div>
                                 </div>
-
-                                {/* Color Stripe */}
                                 <div
                                     className="w-1 self-stretch rounded-full my-1 opacity-50"
                                     style={{ backgroundColor: event.color || '#e2e8f0' }}
@@ -137,6 +132,6 @@ export const NextEvents: FC = () => {
                     })
                 )}
             </div>
-        </Card>
+        </div>
     );
 };

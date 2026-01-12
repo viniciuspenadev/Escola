@@ -1,5 +1,6 @@
 import { type FC, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useSystem } from '../contexts/SystemContext';
 import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../services/supabase';
 import { Button, Card, Input, Modal } from '../components/ui';
@@ -10,6 +11,7 @@ import {
     UserPlus, X, Users
 } from 'lucide-react';
 import { ParentAccessGenerator } from '../components/ParentAccessGenerator';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 
 // Sections map for Tabs
@@ -20,6 +22,7 @@ const SECTIONS = [
     { id: 'financial', label: 'Financeiro', icon: DollarSign },
     { id: 'contract', label: 'Contrato', icon: FileText },
     { id: 'academic', label: 'Boletim', icon: GraduationCap },
+    { id: 'settings', label: 'Ações', icon: Shield },
 ];
 
 // Document Types Definitions
@@ -36,8 +39,12 @@ export const EnrollmentDetailsView: FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
+    const { years } = useSystem();
 
     // State
+    const [availableClasses, setAvailableClasses] = useState<any[]>([]);
+    const [selectedClassForApproval, setSelectedClassForApproval] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -137,6 +144,21 @@ export const EnrollmentDetailsView: FC = () => {
             console.error('Error fetching guardians:', err);
         }
     };
+
+    // Fetch classes for approval modal
+    useEffect(() => {
+        if (showApproveModal && enrollment?.academic_year) {
+            const fetchClasses = async () => {
+                const { data } = await supabase
+                    .from('classes')
+                    .select('*')
+                    .eq('school_year', enrollment.academic_year)
+                    .order('name');
+                if (data) setAvailableClasses(data);
+            };
+            fetchClasses();
+        }
+    }, [showApproveModal, enrollment?.academic_year]);
 
     // Sync changes to Student Record (if linked)
     const syncStudentData = async (studentId: string, currentForm: any, currentDetails: any) => {
@@ -364,7 +386,14 @@ export const EnrollmentDetailsView: FC = () => {
         if (action === 'delete') shouldDelete = true;
 
         if (shouldDelete) {
-            if (!confirm('Excluir este documento e seus dados?')) return;
+
+            const isConfirmed = await confirm({
+                message: 'Excluir este documento e seus dados?',
+                type: 'warning',
+                confirmText: 'Excluir'
+            });
+
+            if (!isConfirmed) return;
             // Remove from Storage
             await supabase.storage.from('documents').remove([currentDoc.file_path]);
 
@@ -468,7 +497,14 @@ export const EnrollmentDetailsView: FC = () => {
     };
 
     const handleDeleteEnrollment = async () => {
-        if (!confirm('Tem certeza que deseja EXCLUIR este rascunho de matrícula? Esta ação não pode ser desfeita.')) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Rascunho',
+            message: 'Tem certeza que deseja EXCLUIR este rascunho de matrícula? Esta ação não pode ser desfeita.',
+            type: 'danger',
+            confirmText: 'Excluir Definitivamente'
+        });
+
+        if (!isConfirmed) return;
 
         setSaving(true);
         try {
@@ -485,7 +521,14 @@ export const EnrollmentDetailsView: FC = () => {
     };
 
     const handleSendForAnalysis = async () => {
-        if (!confirm('Enviar matrícula para análise? O pai não poderá mais editar até que você aprove ou recuse.')) return;
+        const isConfirmed = await confirm({
+            title: 'Enviar para Análise',
+            message: 'Enviar matrícula para análise? O pai não poderá mais editar até que você aprove ou recuse.',
+            confirmText: 'Enviar',
+            type: 'info'
+        });
+
+        if (!isConfirmed) return;
 
         setSaving(true);
         try {
@@ -507,18 +550,46 @@ export const EnrollmentDetailsView: FC = () => {
     };
 
     const performApproval = async () => {
-
-        setSaving(true); // Re-using saving state for loading indicator
+        setSaving(true);
         try {
+            // 1. Approve Enrollment
             const { data, error } = await supabase.rpc('approve_enrollment', {
                 enrollment_id: id
             });
-
             if (error) throw error;
 
-            setShowApproveModal(false);
+            // 2. Assign Class (if selected)
+            if (selectedClassForApproval && data.student_id) {
+                console.log('Attempting to enroll in class:', {
+                    class_id: selectedClassForApproval,
+                    student_id: data.student_id
+                });
 
-            // Show Success Modal instead of Alert
+                const { error: classError } = await supabase.from('class_enrollments').insert({
+                    class_id: selectedClassForApproval,
+                    student_id: data.student_id,
+                    enrolled_at: new Date().toISOString()
+                });
+
+                if (classError) {
+                    console.error('Class Enrollment Failed:', classError);
+                    addToast('error', 'Aluno criado, mas erro ao enturmar: ' + classError.message);
+                }
+            }
+
+            // 3. Update Lead Status (CRM Integration)
+            if (details?.lead_id) {
+                // No need to await or handle error explicitly here, as it shouldn't block approval success
+                supabase
+                    .from('leads')
+                    .update({ status: 'converted', updated_at: new Date().toISOString() })
+                    .eq('id', details.lead_id)
+                    .then(({ error: leadError }) => {
+                        if (leadError) console.error('Error updating lead status:', leadError);
+                    });
+            }
+
+            setShowApproveModal(false);
             if (data && data.student_id) {
                 setCreatedStudentId(data.student_id);
                 setShowSuccessModal(true);
@@ -540,7 +611,14 @@ export const EnrollmentDetailsView: FC = () => {
         const currentYear = enrollment.academic_year || new Date().getFullYear();
         const nextYear = currentYear + 1;
 
-        if (!confirm(`Deseja iniciar a rematrícula de ${formData.candidate_name} para ${nextYear}?`)) return;
+        const isConfirmed = await confirm({
+            title: 'Iniciar Rematrícula',
+            message: `Deseja iniciar a rematrícula de ${formData.candidate_name} para ${nextYear}?`,
+            confirmText: `Iniciar ${nextYear}`,
+            type: 'success'
+        });
+
+        if (!isConfirmed) return;
 
         setGeneratingRenewal(true);
         try {
@@ -622,19 +700,31 @@ export const EnrollmentDetailsView: FC = () => {
                     </div>
                 </div>
 
+
                 <div className="flex gap-2">
-                    {/* Renewal Button */}
-                    {enrollment?.status === 'approved' && (
-                        <Button
-                            variant="outline"
-                            className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                            onClick={handleRenewal}
-                            disabled={generatingRenewal}
-                        >
-                            {generatingRenewal ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                            Renovar para {enrollment.academic_year ? enrollment.academic_year + 1 : 'Próximo Ano'}
-                        </Button>
-                    )}
+                    {/* Renewal Button - Only if Next Year exists and is Open */}
+                    {(() => {
+                        if (enrollment?.status !== 'approved') return null;
+
+                        const currentYear = enrollment.academic_year || new Date().getFullYear();
+                        const nextYear = currentYear + 1;
+                        const targetYearObj = years.find(y => parseInt(y.year) === nextYear);
+                        const canRenew = targetYearObj && ['active', 'planning'].includes(targetYearObj.status);
+
+                        if (!canRenew) return null;
+
+                        return (
+                            <Button
+                                variant="outline"
+                                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                onClick={handleRenewal}
+                                disabled={generatingRenewal}
+                            >
+                                {generatingRenewal ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                                Renovar para {nextYear}
+                            </Button>
+                        );
+                    })()}
 
                     {enrollment?.status === 'approved' ? (
                         <div className="flex gap-2">
@@ -678,7 +768,14 @@ export const EnrollmentDetailsView: FC = () => {
                                     variant="outline"
                                     className="text-amber-600 border-amber-200 hover:bg-amber-50"
                                     onClick={async () => {
-                                        if (!confirm('Deseja reabrir esta matrícula para edição pelo responsável?')) return;
+                                        const isConfirmed = await confirm({
+                                            title: 'Reabrir Edição',
+                                            message: 'Deseja reabrir esta matrícula para edição pelo responsável?',
+                                            type: 'warning',
+                                            confirmText: 'Reabrir'
+                                        });
+                                        if (!isConfirmed) return;
+
                                         setSaving(true);
                                         try {
                                             const { error } = await supabase
@@ -1316,419 +1413,463 @@ export const EnrollmentDetailsView: FC = () => {
                                 </div>
                             </div>
                         )}
-                    </Card>
-                </div>
-            </div >
-
-            {/* Tab: Academic (Boletim) */}
-            {
-                activeTab === 'academic' && (
-                    <Card className="min-h-[500px] p-5">
-                        <div className="space-y-6 animate-fade-in">
-                            <div className="border-b pb-4 mb-4">
-                                <h2 className="text-lg font-bold flex items-center gap-2">
-                                    <GraduationCap className="w-5 h-5 text-brand-600" />
-                                    Boletim Escolar
-                                </h2>
-                                <p className="text-sm text-gray-500">
-                                    Notas e avaliações referentes a este contrato de matrícula.
-                                </p>
-                            </div>
-
-                            {enrollmentGrades.length === 0 ? (
-                                <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl bg-gray-50 flex flex-col items-center justify-center">
-                                    <div className="bg-white p-4 rounded-full shadow-sm mb-3">
-                                        <GraduationCap className="w-8 h-8 text-brand-500" />
-                                    </div>
-                                    <p className="text-gray-900 font-semibold text-lg">Boletim Vazio</p>
-                                    <p className="text-sm text-gray-500 max-w-sm mt-1">
-                                        Nenhuma avaliação foi lançada para este contrato ainda. Assim que os professores lançarem, elas aparecerão aqui.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Group by Term */}
-                                    {['1_bimestre', '2_bimestre', '3_bimestre', '4_bimestre'].map(term => {
-                                        const termGrades = enrollmentGrades.filter(g => g.grade_book?.term === term);
-
-                                        const termLabels: any = {
-                                            '1_bimestre': '1º Bimestre',
-                                            '2_bimestre': '2º Bimestre',
-                                            '3_bimestre': '3º Bimestre',
-                                            '4_bimestre': '4º Bimestre'
-                                        };
-
-                                        return (
-                                            <div key={term} className={`border rounded-xl overflow-hidden flex flex-col transition-all duration-200 ${termGrades.length > 0 ? 'bg-white border-gray-200 shadow-sm hover:shadow-md' : 'bg-gray-50 border-gray-100 border-dashed opacity-70'
-                                                }`}>
-                                                <div className={`px-4 py-3 border-b font-semibold flex justify-between items-center ${termGrades.length > 0 ? 'bg-gray-50 border-gray-200 text-gray-800' : 'bg-transparent border-gray-100 text-gray-400'
-                                                    }`}>
-                                                    <span>{termLabels[term]}</span>
-                                                    <span className="text-xs font-normal opacity-70">
-                                                        {termGrades.length} avaliações
-                                                    </span>
-                                                </div>
-
-                                                {termGrades.length > 0 ? (
-                                                    <div className="overflow-x-auto">
-                                                        <table className="w-full text-sm text-left">
-                                                            <thead className="text-xs text-gray-500 bg-white border-b border-gray-100 uppercase tracking-wider">
-                                                                <tr>
-                                                                    <th className="px-4 py-2 font-medium">Atividade</th>
-                                                                    <th className="px-4 py-2 text-center font-medium">Nota</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-gray-50">
-                                                                {termGrades.map((grade: any) => (
-                                                                    <tr key={grade.id} className="hover:bg-gray-50 transition-colors">
-                                                                        <td className="px-4 py-3">
-                                                                            <div className="font-medium text-gray-900 line-clamp-1" title={grade.grade_book?.title}>
-                                                                                {grade.grade_book?.title}
-                                                                            </div>
-                                                                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                                                                                <span className="uppercase tracking-widest text-[10px] bg-gray-100 px-1 rounded">
-                                                                                    {grade.grade_book?.subject?.slice(0, 3) || 'GEN'}
-                                                                                </span>
-                                                                                <span className="line-clamp-1">{grade.grade_book?.subject || 'Geral'}</span>
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className="px-4 py-3 text-center">
-                                                                            <div className="flex flex-col items-center">
-                                                                                <span className={`font-bold text-sm px-2.5 py-0.5 rounded-full ${(grade.score / grade.grade_book?.max_score) >= 0.6
-                                                                                    ? 'bg-green-100 text-green-700'
-                                                                                    : 'bg-red-100 text-red-700'
-                                                                                    }`}>
-                                                                                    {Number(grade.score).toFixed(1)}
-                                                                                </span>
-                                                                                <span className="text-[10px] text-gray-400 mt-1">
-                                                                                    de {grade.grade_book?.max_score}
-                                                                                </span>
-                                                                            </div>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                ) : (
-                                                    <div className="p-6 text-center text-gray-400 text-sm italic">
-                                                        Sem notas neste período
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </Card>
-                )
-            }
-
-            <Modal
-                isOpen={showApproveModal}
-                onClose={() => setShowApproveModal(false)}
-                title="Aprovar Matrícula e Criar Aluno"
-                footer={
-                    <>
-                        <Button variant="ghost" onClick={() => setShowApproveModal(false)} disabled={saving}>
-                            Cancelar
-                        </Button>
-                        <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={performApproval} disabled={saving}>
-                            {saving ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                            {saving ? 'Processando...' : 'Confirmar Aprovação'}
-                        </Button>
-                    </>
-                }
-            >
-                <div className="space-y-4">
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex gap-3">
-                        <div className="text-yellow-600">
-                            <User className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-yellow-800 text-sm">Atenção!</h4>
-                            <p className="text-sm text-yellow-700 mt-1">
-                                Esta ação irá transformar a matrícula em um <strong>Aluno Oficial</strong>.
-                            </p>
-                        </div>
-                    </div>
-                    <p className="text-gray-600">
-                        Verifique se todos os documentos obrigatórios foram validados e se os dados financeiros estão corretos.
-                    </p>
-                    <ul className="list-disc pl-5 text-sm text-gray-500 space-y-1">
-                        <li>O status da matrícula mudará para <strong>Aprovado</strong>.</li>
-                        <li>Um novo registro será criado na tabela de Alunos.</li>
-                        <li>O responsável receberá o status de confirmação (futuro).</li>
-                    </ul>
-                </div>
-            </Modal>
-
-            {/* Success Modal */}
-            <Modal
-                isOpen={showSuccessModal}
-                onClose={() => { }} // Force user to click the action button
-                title=""
-                footer={
-                    <div className="w-full flex justify-center">
-                        <Button className="bg-brand-600 hover:bg-brand-700 w-full md:w-auto min-w-[200px]" onClick={() => navigate('/matriculas')}>
-                            Voltar para Lista
-                        </Button>
-                    </div>
-                }
-            >
-                <div className="flex flex-col items-center justify-center text-center py-6 space-y-4 w-full">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce">
-                        <CheckCircle className="w-10 h-10 text-green-600" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900">Matrícula Aprovada!</h2>
-                    <p className="text-gray-600 max-w-md">
-                        O aluno foi cadastrado com sucesso e agora faz parte do corpo discente oficial.
-                    </p>
-                    {createdStudentId && (
-                        <div className="w-full max-w-sm bg-gray-50 p-4 rounded-xl border border-gray-200 mt-4 text-left">
-                            <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                                <User className="w-4 h-4" /> Acesso do Responsável
-                            </h4>
-                            <p className="text-xs text-gray-500 mb-3">
-                                Utilize a função "Criar Acesso" no topo da matrícula para gerar as credenciais do pai.
-                            </p>
-                        </div>
-                    )}
-                </div>
-            </Modal>
-
-            {/* Financial Confirm Modal */}
-            <Modal
-                isOpen={showFinancialConfirmModal}
-                onClose={() => setShowFinancialConfirmModal(false)}
-                title="Gerar Parcelas"
-                footer={
-                    <>
-                        <Button variant="ghost" onClick={() => setShowFinancialConfirmModal(false)} disabled={generating}>
-                            Cancelar
-                        </Button>
-                        <Button className="bg-brand-600 hover:bg-brand-700" onClick={handleGenerateInstallments} disabled={generating}>
-                            {generating ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
-                            {generating ? 'Gerando...' : 'Confirmar Geração'}
-                        </Button>
-                    </>
-                }
-            >
-                <div>
-                    <p className="text-gray-600 mb-4">
-                        Você está prestes a gerar as parcelas para esta matrícula com base no plano selecionado.
-                    </p>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                        <p className="font-medium mb-1">Detalhes do Plano:</p>
-                        <ul className="list-disc pl-5 space-y-1">
-                            <li>Isso substituirá quaisquer parcelas existentes para esta matrícula.</li>
-                            <li>Após gerar, você poderá ajustar as datas e valores individualmente.</li>
-                        </ul>
-                    </div>
-                </div>
-            </Modal>
 
 
-
-
-
-            {/* Manual Access Modal */}
-            {
-                showManualAccess && enrollment && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl relative overflow-hidden">
-                            <button
-                                onClick={() => setShowManualAccess(false)}
-                                className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition-colors z-10"
-                            >
-                                <X className="w-5 h-5 text-gray-400" />
-                            </button>
-                            <ParentAccessGenerator
-                                studentId={enrollment.student_id}
-                                studentName={enrollment.candidate_name}
-                                responsibleEmail={enrollment.parent_email}
-                                responsibleName={details?.parent_name}
-                                onClose={() => setShowManualAccess(false)}
-                                onSuccess={() => {
-                                    setShowManualAccess(false);
-                                    if (enrollment.student_id) {
-                                        fetchGuardians(enrollment.student_id);
-                                    }
-                                }}
-                            />
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Guardian Management Modal */}
-            {
-                showGuardianModal && enrollment && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                        <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl relative overflow-hidden">
-                            <button
-                                onClick={() => setShowGuardianModal(false)}
-                                className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition-colors z-10"
-                            >
-                                <X className="w-5 h-5 text-gray-400" />
-                            </button>
-
-                            <div className="p-6">
-                                <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                                    <Users className="w-6 h-6 text-brand-600" />
-                                    Gerenciar Acessos
-                                </h3>
-                                <p className="text-sm text-gray-500 mb-6">
-                                    Responsáveis com acesso ao portal do aluno <strong>{enrollment.candidate_name}</strong>
-                                </p>
-
-                                {/* Guardian List */}
-                                <div className="space-y-3 mb-6">
-                                    {guardians.length === 0 ? (
-                                        <p className="text-sm text-gray-400 italic text-center py-4">
-                                            Nenhum responsável vinculado ainda.
+                        {/* Tab: Academic (Boletim) */}
+                        {
+                            activeTab === 'academic' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="border-b pb-4 mb-4">
+                                        <h2 className="text-lg font-bold flex items-center gap-2">
+                                            <GraduationCap className="w-5 h-5 text-brand-600" />
+                                            Boletim Escolar
+                                        </h2>
+                                        <p className="text-sm text-gray-500">
+                                            Notas e avaliações referentes a este contrato de matrícula.
                                         </p>
+                                    </div>
+
+                                    {enrollmentGrades.length === 0 ? (
+                                        <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl bg-gray-50 flex flex-col items-center justify-center">
+                                            <div className="bg-white p-4 rounded-full shadow-sm mb-3">
+                                                <GraduationCap className="w-8 h-8 text-brand-500" />
+                                            </div>
+                                            <p className="text-gray-900 font-semibold text-lg">Boletim Vazio</p>
+                                            <p className="text-sm text-gray-500 max-w-sm mt-1">
+                                                Nenhuma avaliação foi lançada para este contrato ainda. Assim que os professores lançarem, elas aparecerão aqui.
+                                            </p>
+                                        </div>
                                     ) : (
-                                        guardians.map((guardian: any) => {
-                                            const profile = guardian.profiles;
-                                            return (
-                                                <div
-                                                    key={guardian.guardian_id}
-                                                    className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-100"
-                                                >
-                                                    <div className="w-10 h-10 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 font-bold">
-                                                        {profile.name?.charAt(0).toUpperCase() || '?'}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* Group by Term */}
+                                            {['1_bimestre', '2_bimestre', '3_bimestre', '4_bimestre'].map(term => {
+                                                const termGrades = enrollmentGrades.filter(g => g.grade_book?.term === term);
+
+                                                const termLabels: any = {
+                                                    '1_bimestre': '1º Bimestre',
+                                                    '2_bimestre': '2º Bimestre',
+                                                    '3_bimestre': '3º Bimestre',
+                                                    '4_bimestre': '4º Bimestre'
+                                                };
+
+                                                return (
+                                                    <div key={term} className={`border rounded-xl overflow-hidden flex flex-col transition-all duration-200 ${termGrades.length > 0 ? 'bg-white border-gray-200 shadow-sm hover:shadow-md' : 'bg-gray-50 border-gray-100 border-dashed opacity-70'
+                                                        }`}>
+                                                        <div className={`px-4 py-3 border-b font-semibold flex justify-between items-center ${termGrades.length > 0 ? 'bg-gray-50 border-gray-200 text-gray-800' : 'bg-transparent border-gray-100 text-gray-400'
+                                                            }`}>
+                                                            <span>{termLabels[term]}</span>
+                                                            <span className="text-xs font-normal opacity-70">
+                                                                {termGrades.length} avaliações
+                                                            </span>
+                                                        </div>
+
+                                                        {termGrades.length > 0 ? (
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full text-sm text-left">
+                                                                    <thead className="text-xs text-gray-500 bg-white border-b border-gray-100 uppercase tracking-wider">
+                                                                        <tr>
+                                                                            <th className="px-4 py-2 font-medium">Atividade</th>
+                                                                            <th className="px-4 py-2 text-center font-medium">Nota</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-gray-50">
+                                                                        {termGrades.map((grade: any) => (
+                                                                            <tr key={grade.id} className="hover:bg-gray-50 transition-colors">
+                                                                                <td className="px-4 py-3">
+                                                                                    <div className="font-medium text-gray-900 line-clamp-1" title={grade.grade_book?.title}>
+                                                                                        {grade.grade_book?.title}
+                                                                                    </div>
+                                                                                    <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                                                                                        <span className="uppercase tracking-widest text-[10px] bg-gray-100 px-1 rounded">
+                                                                                            {grade.grade_book?.subject?.slice(0, 3) || 'GEN'}
+                                                                                        </span>
+                                                                                        <span className="line-clamp-1">{grade.grade_book?.subject || 'Geral'}</span>
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    <div className="flex flex-col items-center">
+                                                                                        <span className={`font-bold text-sm px-2.5 py-0.5 rounded-full ${(grade.score / grade.grade_book?.max_score) >= 0.6
+                                                                                            ? 'bg-green-100 text-green-700'
+                                                                                            : 'bg-red-100 text-red-700'
+                                                                                            }`}>
+                                                                                            {Number(grade.score).toFixed(1)}
+                                                                                        </span>
+                                                                                        <span className="text-[10px] text-gray-400 mt-1">
+                                                                                            de {grade.grade_book?.max_score}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="p-6 text-center text-gray-400 text-sm italic">
+                                                                Sem notas neste período
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-medium text-gray-900 truncate">{profile.name || 'Sem nome'}</p>
-                                                        <p className="text-xs text-gray-500 truncate">{profile.email}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <CheckCircle className="w-4 h-4 text-green-600" />
-                                                        <span className="text-xs text-green-600 font-medium">Ativo</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
+                                                );
+                                            })}
+                                        </div>
                                     )}
                                 </div>
+                            )
+                        }
 
-                                {/* Add New Guardian Button */}
-                                <Button
-                                    onClick={() => {
-                                        setShowGuardianModal(false);
-                                        setShowManualAccess(true);
-                                    }}
-                                    variant="outline"
-                                    className="w-full border-2 border-dashed border-brand-300 text-brand-700 hover:bg-brand-50"
-                                >
-                                    <UserPlus className="w-4 h-4 mr-2" />
-                                    Adicionar Novo Responsável
-                                </Button>
+                        {/* Approve Modal with Class Selection */}
+                        <Modal
+                            isOpen={showApproveModal}
+                            onClose={() => setShowApproveModal(false)}
+                            title="Aprovar Matrícula"
+                            footer={
+                                <>
+                                    <Button variant="ghost" onClick={() => setShowApproveModal(false)} disabled={saving}>
+                                        Cancelar
+                                    </Button>
+                                    <Button className="bg-brand-600 hover:bg-brand-700" onClick={performApproval} disabled={saving}>
+                                        {saving ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                                        Confirmar Aprovação
+                                    </Button>
+                                </>
+                            }
+                        >
+                            <div className="space-y-4">
+                                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                                    <div className="flex">
+                                        <div className="flex-shrink-0">
+                                            <Shield className="h-5 w-5 text-yellow-400" />
+                                        </div>
+                                        <div className="ml-3">
+                                            <p className="text-sm text-yellow-700">
+                                                Você está prestes a aprovar a matrícula de <strong>{formData.candidate_name}</strong>.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Enturmar Aluno (Opcional)</label>
+                                    <select
+                                        className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none hover:bg-white"
+                                        value={selectedClassForApproval}
+                                        onChange={(e) => setSelectedClassForApproval(e.target.value)}
+                                    >
+                                        <option value="">-- Apenas Matricular (Sem Turma) --</option>
+                                        {availableClasses.map((cls) => (
+                                            <option key={cls.id} value={cls.id}>
+                                                {cls.name} ({cls.shift === 'morning' ? 'Matutino' : 'Vespertino'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Selecione a turma para já vincular o aluno. Você pode fazer isso depois se preferir.
+                                    </p>
+                                </div>
+
+                                <ul className="list-disc pl-5 text-xs text-gray-500 space-y-1 bg-gray-50 p-3 rounded-lg">
+                                    <li>O status mudará para <strong>Aprovado</strong>.</li>
+                                    <li>Um registro de <strong>Aluno</strong> será criado oficialmente.</li>
+                                    <li>Se selecionado, o aluno será inserido na turma.</li>
+                                </ul>
                             </div>
-                        </div>
-                    </div>
-                )
-            }
+                        </Modal>
 
-            <div className="mt-12 border-t border-gray-200 pt-8 animate-fade-in">
-                <h3 className="text-lg font-bold text-red-600 mb-4 flex items-center">
-                    <Shield className="w-5 h-5 mr-2" /> Zona de Perigo
-                </h3>
-                <div className="bg-red-50 border border-red-100 rounded-xl p-6">
-                    <h4 className="font-bold text-red-900 mb-2">Cancelar Matrícula</h4>
-                    <p className="text-sm text-red-700 mb-6 max-w-2xl">
-                        O cancelamento de uma matrícula revoga o acesso do responsável e marca o registro como inativo.
-                        Se o aluno foi transferido, selecione a opção apropriada para atualizar o status do aluno também.
-                    </p>
-
-                    <div className="flex gap-4">
-                        <Button
-                            variant="outline"
-                            className="border-red-200 text-red-700 hover:bg-red-100 hover:text-red-800"
-                            onClick={async () => {
-                                const reason = prompt("Por favor, informe o motivo do cancelamento (Ex: Desistência, Erro de cadastro):");
-                                if (!reason) return;
-
-                                if (!confirm("Tem certeza? Esta ação não pode ser desfeita facilmente.")) return;
-
-                                setLoading(true);
-                                try {
-                                    const { error } = await supabase
-                                        .from('enrollments')
-                                        .update({
-                                            status: 'cancelled',
-                                            details: {
-                                                ...details,
-                                                cancellation_reason: reason,
-                                                cancelled_at: new Date().toISOString()
-                                            }
-                                        })
-                                        .eq('id', id);
-
-                                    if (error) throw error;
-                                    alert("Matrícula cancelada.");
-                                    navigate('/matriculas');
-                                } catch (e: any) {
-                                    alert("Erro: " + e.message);
-                                } finally {
-                                    setLoading(false);
-                                }
-                            }}
+                        {/* Success Modal */}
+                        <Modal
+                            isOpen={showSuccessModal}
+                            onClose={() => { }} // Force user to click the action button
+                            title=""
+                            footer={
+                                <div className="w-full flex justify-center">
+                                    <Button className="bg-brand-600 hover:bg-brand-700 w-full md:w-auto min-w-[200px]" onClick={() => navigate('/matriculas')}>
+                                        Voltar para Lista
+                                    </Button>
+                                </div>
+                            }
                         >
-                            Cancelar Matrícula
-                        </Button>
+                            <div className="flex flex-col items-center justify-center text-center py-6 space-y-4 w-full">
+                                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce">
+                                    <CheckCircle className="w-10 h-10 text-green-600" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-gray-900">Matrícula Aprovada!</h2>
+                                <p className="text-gray-600 max-w-md">
+                                    O aluno foi cadastrado com sucesso e agora faz parte do corpo discente oficial.
+                                </p>
+                                {createdStudentId && (
+                                    <div className="w-full max-w-sm bg-gray-50 p-4 rounded-xl border border-gray-200 mt-4 text-left">
+                                        <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                            <User className="w-4 h-4" /> Acesso do Responsável
+                                        </h4>
+                                        <p className="text-xs text-gray-500 mb-3">
+                                            Utilize a função "Criar Acesso" no topo da matrícula para gerar as credenciais do pai.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </Modal>
 
-                        <Button
-                            className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20"
-                            onClick={async () => {
-                                const reason = prompt("Informe o motivo da transferência/saída:");
-                                if (!reason) return;
-
-                                if (!confirm("Isso também marcará o ALUNO como 'Transferido/Inativo'. Confirmar?")) return;
-
-                                setLoading(true);
-                                try {
-                                    // 1. Cancel Enrollment
-                                    const { error: enrollError } = await supabase
-                                        .from('enrollments')
-                                        .update({
-                                            status: 'cancelled',
-                                            details: {
-                                                ...details,
-                                                cancellation_reason: 'TRANSFERÊNCIA: ' + reason,
-                                                cancelled_at: new Date().toISOString()
-                                            }
-                                        })
-                                        .eq('id', id);
-
-                                    if (enrollError) throw enrollError;
-
-                                    // 2. Update Student Context (if exists)
-                                    if (enrollment?.student_id) {
-                                        const { error: studentError } = await supabase
-                                            .from('students')
-                                            .update({ status: 'transferred' }) // Ensure this status is valid in your constraints/types
-                                            .eq('id', enrollment.student_id);
-
-                                        if (studentError) throw studentError;
-                                    }
-
-                                    alert("Matrícula cancelada e Aluno transferido.");
-                                    navigate('/matriculas');
-                                } catch (e: any) {
-                                    alert("Erro: " + e.message);
-                                } finally {
-                                    setLoading(false);
-                                }
-                            }}
+                        {/* Financial Confirm Modal */}
+                        <Modal
+                            isOpen={showFinancialConfirmModal}
+                            onClose={() => setShowFinancialConfirmModal(false)}
+                            title="Gerar Parcelas"
+                            footer={
+                                <>
+                                    <Button variant="ghost" onClick={() => setShowFinancialConfirmModal(false)} disabled={generating}>
+                                        Cancelar
+                                    </Button>
+                                    <Button className="bg-brand-600 hover:bg-brand-700" onClick={handleGenerateInstallments} disabled={generating}>
+                                        {generating ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
+                                        {generating ? 'Gerando...' : 'Confirmar Geração'}
+                                    </Button>
+                                </>
+                            }
                         >
-                            Registrar Transferência
-                        </Button>
-                    </div>
+                            <div>
+                                <p className="text-gray-600 mb-4">
+                                    Você está prestes a gerar as parcelas para esta matrícula com base no plano selecionado.
+                                </p>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                                    <p className="font-medium mb-1">Detalhes do Plano:</p>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                        <li>Isso substituirá quaisquer parcelas existentes para esta matrícula.</li>
+                                        <li>Após gerar, você poderá ajustar as datas e valores individualmente.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </Modal>
+
+
+
+
+
+                        {/* Manual Access Modal */}
+                        {
+                            showManualAccess && enrollment && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                                    <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl relative overflow-hidden">
+                                        <button
+                                            onClick={() => setShowManualAccess(false)}
+                                            className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition-colors z-10"
+                                        >
+                                            <X className="w-5 h-5 text-gray-400" />
+                                        </button>
+                                        <ParentAccessGenerator
+                                            studentId={enrollment.student_id}
+                                            studentName={enrollment.candidate_name}
+                                            responsibleEmail={enrollment.parent_email}
+                                            responsibleName={details?.parent_name}
+                                            onClose={() => setShowManualAccess(false)}
+                                            onSuccess={() => {
+                                                setShowManualAccess(false);
+                                                if (enrollment.student_id) {
+                                                    fetchGuardians(enrollment.student_id);
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                        {/* Guardian Management Modal */}
+                        {
+                            showGuardianModal && enrollment && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                                    <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl relative overflow-hidden">
+                                        <button
+                                            onClick={() => setShowGuardianModal(false)}
+                                            className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition-colors z-10"
+                                        >
+                                            <X className="w-5 h-5 text-gray-400" />
+                                        </button>
+
+                                        <div className="p-6">
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                                <Users className="w-6 h-6 text-brand-600" />
+                                                Gerenciar Acessos
+                                            </h3>
+                                            <p className="text-sm text-gray-500 mb-6">
+                                                Responsáveis com acesso ao portal do aluno <strong>{enrollment.candidate_name}</strong>
+                                            </p>
+
+                                            {/* Guardian List */}
+                                            <div className="space-y-3 mb-6">
+                                                {guardians.length === 0 ? (
+                                                    <p className="text-sm text-gray-400 italic text-center py-4">
+                                                        Nenhum responsável vinculado ainda.
+                                                    </p>
+                                                ) : (
+                                                    guardians.map((guardian: any) => {
+                                                        const profile = guardian.profiles;
+                                                        return (
+                                                            <div
+                                                                key={guardian.guardian_id}
+                                                                className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-100"
+                                                            >
+                                                                <div className="w-10 h-10 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 font-bold">
+                                                                    {profile.name?.charAt(0).toUpperCase() || '?'}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-medium text-gray-900 truncate">{profile.name || 'Sem nome'}</p>
+                                                                    <p className="text-xs text-gray-500 truncate">{profile.email}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                                                    <span className="text-xs text-green-600 font-medium">Ativo</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+
+                                            {/* Add New Guardian Button */}
+                                            <Button
+                                                onClick={() => {
+                                                    setShowGuardianModal(false);
+                                                    setShowManualAccess(true);
+                                                }}
+                                                variant="outline"
+                                                className="w-full border-2 border-dashed border-brand-300 text-brand-700 hover:bg-brand-50"
+                                            >
+                                                <UserPlus className="w-4 h-4 mr-2" />
+                                                Adicionar Novo Responsável
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                        {/* Tab: Settings / Danger Zone */}
+                        {
+                            activeTab === 'settings' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="border-b pb-4 mb-4">
+                                        <h2 className="text-lg font-bold flex items-center gap-2 text-red-600">
+                                            <Shield className="w-5 h-5" />
+                                            Zona de Perigo
+                                        </h2>
+                                        <p className="text-sm text-gray-500">
+                                            Ações críticas e irreversíveis para esta matrícula.
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-red-50 border border-red-100 rounded-xl p-6">
+                                        <h4 className="font-bold text-red-900 mb-2">Cancelar Matrícula</h4>
+                                        <p className="text-sm text-red-700 mb-6 max-w-2xl">
+                                            O cancelamento de uma matrícula revoga o acesso do responsável e marca o registro como inativo.
+                                            Se o aluno foi transferido, selecione a opção apropriada para atualizar o status do aluno também.
+                                        </p>
+
+                                        <div className="flex gap-4">
+                                            <Button
+                                                variant="outline"
+                                                className="border-red-200 text-red-700 hover:bg-red-100 hover:text-red-800"
+                                                onClick={async () => {
+                                                    const reason = prompt("Por favor, informe o motivo do cancelamento (Ex: Desistência, Erro de cadastro):");
+                                                    if (!reason) return;
+
+                                                    const isConfirmed = await confirm({
+                                                        title: 'Confirmar Cancelamento',
+                                                        message: 'Tem certeza? Esta ação não pode ser desfeita facilmente.',
+                                                        type: 'danger',
+                                                        confirmText: 'Sim, Cancelar'
+                                                    });
+
+                                                    if (!isConfirmed) return;
+
+                                                    setLoading(true);
+                                                    try {
+                                                        const { error } = await supabase
+                                                            .from('enrollments')
+                                                            .update({
+                                                                status: 'cancelled',
+                                                                details: {
+                                                                    ...details,
+                                                                    cancellation_reason: reason,
+                                                                    cancelled_at: new Date().toISOString()
+                                                                }
+                                                            })
+                                                            .eq('id', id);
+
+                                                        if (error) throw error;
+                                                        alert("Matrícula cancelada.");
+                                                        navigate('/matriculas');
+                                                    } catch (e: any) {
+                                                        alert("Erro: " + e.message);
+                                                    } finally {
+                                                        setLoading(false);
+                                                    }
+                                                }}
+                                            >
+                                                Cancelar Matrícula
+                                            </Button>
+
+                                            <Button
+                                                className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20"
+                                                onClick={async () => {
+                                                    const reason = prompt("Informe o motivo da transferência/saída:");
+                                                    if (!reason) return;
+
+                                                    const isConfirmed = await confirm({
+                                                        title: 'Confirmar Transferência',
+                                                        message: "Isso também marcará o ALUNO como 'Transferido/Inativo'. Confirmar?",
+                                                        type: 'danger',
+                                                        confirmText: 'Confirmar Transferência'
+                                                    });
+
+                                                    if (!isConfirmed) return;
+
+                                                    setLoading(true);
+                                                    try {
+                                                        // 1. Cancel Enrollment
+                                                        const { error: enrollError } = await supabase
+                                                            .from('enrollments')
+                                                            .update({
+                                                                status: 'cancelled',
+                                                                details: {
+                                                                    ...details,
+                                                                    cancellation_reason: 'TRANSFERÊNCIA: ' + reason,
+                                                                    cancelled_at: new Date().toISOString()
+                                                                }
+                                                            })
+                                                            .eq('id', id);
+
+                                                        if (enrollError) throw enrollError;
+
+                                                        // 2. Update Student Context (if exists)
+                                                        if (enrollment?.student_id) {
+                                                            const { error: studentError } = await supabase
+                                                                .from('students')
+                                                                .update({ status: 'transferred' }) // Ensure this status is valid in your constraints/types
+                                                                .eq('id', enrollment.student_id);
+
+                                                            if (studentError) throw studentError;
+                                                        }
+
+                                                        alert("Matrícula cancelada e Aluno transferido.");
+                                                        navigate('/matriculas');
+                                                    } catch (e: any) {
+                                                        alert("Erro: " + e.message);
+                                                    } finally {
+                                                        setLoading(false);
+                                                    }
+                                                }}
+                                            >
+                                                Registrar Transferência
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        }
+                    </Card>
                 </div>
             </div>
-        </div >
+        </div>
     );
 };

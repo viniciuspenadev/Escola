@@ -17,8 +17,10 @@ import {
     Circle,
     GraduationCap,
     AlertTriangle,
-    Settings
-} from 'lucide-react'; import { useLocation } from 'react-router-dom';
+    Settings,
+    Megaphone,
+    TrendingUp
+} from 'lucide-react'; import { useLocation, Link } from 'react-router-dom';
 import { Button } from './ui/Button';
 import { useState } from 'react';
 
@@ -37,7 +39,8 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ children, user, onLogout }) 
         {
             section: 'Visão Geral', // Optional section title (can be hidden if first)
             items: [
-                { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['*'] }
+                { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['*'] },
+                { icon: TrendingUp, label: 'Leads CRM', path: '/admin/leads', roles: ['ADMIN', 'SECRETARY'] },
             ]
         },
         {
@@ -51,6 +54,12 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ children, user, onLogout }) 
             ]
         },
         {
+            section: 'Comunicação',
+            items: [
+                { icon: FileText, label: 'Comunicados', path: '/admin/comunicados', roles: ['ADMIN', 'SECRETARY', 'COORDINATOR'] },
+            ]
+        },
+        {
             section: 'Administrativo',
             items: [
                 { icon: FileText, label: 'Matrículas', path: '/matriculas', roles: ['ADMIN', 'SECRETARY'] },
@@ -61,6 +70,7 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ children, user, onLogout }) 
                     roles: ['ADMIN', 'SECRETARY'],
                     subItems: [
                         { label: 'Visão Geral', path: '/financeiro', end: true },
+                        { label: 'Matric/Mensalidade', path: '/financeiro/alunos' },
                         { label: 'Mensalidades', path: '/financeiro/recebiveis' },
                         { label: 'Contas a Pagar', path: '/financeiro/pagar' },
                         { label: 'Planos & Preços', path: '/financeiro/planos' },
@@ -77,7 +87,8 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ children, user, onLogout }) 
                     path: '/config',
                     roles: ['ADMIN', 'SECRETARY'],
                     subItems: [
-                        { label: 'Geral', path: '/config/geral' },
+                        { label: 'Sistema & Comunicação', path: '/config/geral' },
+                        { label: 'Rotinas Diárias', path: '/config/timelines' },
                         { label: 'Catálogo de Matérias', path: '/config/materias' },
                         { label: 'Unidades / Escolas', path: '/config/unidades' },
                         { label: 'Ano Letivo', path: '/config/anos-letivos' },
@@ -289,11 +300,15 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ children, user, onLogout }) 
             )}
 
             {/* Main Content Area */}
-            <main className="flex-1 md:ml-64 min-h-screen flex flex-col pt-14 md:pt-0">
+            <main className="flex-1 md:ml-64 min-h-screen flex flex-col pt-14 md:pt-0 overflow-x-hidden">
 
                 {/* Desktop Top Bar (Hidden on mobile) */}
                 <header className="hidden md:flex justify-end items-center h-16 bg-white border-b border-gray-200 px-8 sticky top-0 z-10">
                     <div className="flex items-center gap-4">
+                        <Link to="/admin/comunicados" className="flex items-center gap-3 p-3 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
+                            <Megaphone size={20} />
+                            <span className="font-medium">Comunicados</span>
+                        </Link>
                         <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
                             <Bell className="w-5 h-5" />
                         </button>
